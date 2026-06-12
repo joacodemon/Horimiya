@@ -119,20 +119,8 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // ── Mode check ──
-                bool shouldClick = false;
-
-                if (_cfg.Mode == 0) // Hold mode: need physical LMB held
-                {
-                    shouldClick = Win32.IsLeftDown;
-                }
-                else if (_cfg.Mode == 1) // Toggle mode: active when toggled on
-                {
-                    shouldClick = true; // Clicking is already true (toggled via bind)
-                }
-                else // Always mode
-                {
-                    shouldClick = true;
-                }
+                // El usuario quiere que siempre funcione manteniendo el click (función de autoclicker)
+                bool shouldClick = Win32.IsLeftDown;
 
                 if (!shouldClick)
                 {
@@ -158,15 +146,13 @@ namespace lospoderosos_lite.Modules
 
                 // ── Menu / Inventory restriction (cached cursor check) ──
                 bool cursorShown = CachedIsCursorVisible();
-                if (!_cfg.WorkInMenus)
+                // El usuario pidió que si hay cursor (estamos en un menú), SOLO funcione en el inventario.
+                if (cursorShown)
                 {
-                    if (cursorShown)
+                    if (!CachedIsInventoryLikeScreen(foregroundWnd))
                     {
-                        if (!CachedIsInventoryLikeScreen(foregroundWnd))
-                        {
-                            Thread.Sleep(10);
-                            continue;
-                        }
+                        Thread.Sleep(10);
+                        continue;
                     }
                 }
 
@@ -184,26 +170,7 @@ namespace lospoderosos_lite.Modules
 
                 double delayMs;
 
-                if (isRefilling)
-                {
-                    // Safe Refill Logic: prevent picking up items ("se suban") by capping CPS
-                    // Minecraft struggles with inventory clicks faster than ~15 CPS.
-                    double refillCps = 12.0 + (_rng.NextDouble() * 2.0); // 12.0 - 14.0 CPS
-                    delayMs = 1000.0 / refillCps;
-                    
-                    // Add micro-variations per click
-                    delayMs += (_rng.NextDouble() * 4.0 - 2.0);
-                    
-                    // Forced stutter to guarantee the server catches up, absolutely preventing item pickup
-                    _refillClickCount++;
-                    int pauseThreshold = 5 + _rng.Next(4); // 5-8 clicks between pauses
-                    if (_refillClickCount >= pauseThreshold)
-                    {
-                        delayMs += _rng.Next(30, 50); // Large pause to let server sync inventory
-                        _refillClickCount = 0;
-                    }
-                }
-                else if (_cfg.RandMode == 3) // ── Manual Custom Randomization ──
+                if (_cfg.RandMode == 3) // ── Manual Custom Randomization ──
                 {
                     double sumWeights = 0;
                     for (int i = 0; i < 25; i++) sumWeights += _cfg.CustomCpsWeights[i];
@@ -309,6 +276,16 @@ namespace lospoderosos_lite.Modules
                     delayMs += (_rng.NextDouble() * 12.0 - 6.0); // ±6ms raw jitter
                 }
 
+                if (isRefilling && targetCps >= 15.0)
+                {
+                    _refillClickCount++;
+                    if (_refillClickCount >= (8 + _rng.Next(4)))
+                    {
+                        delayMs += _rng.Next(15, 25); // tiny pause to prevent items sticking without killing CPS
+                        _refillClickCount = 0;
+                    }
+                }
+
                 delayMs = Math.Max(3.0, delayMs);
 
                 long delayTicks = (long)(delayMs * Stopwatch.Frequency / 1000.0);
@@ -340,21 +317,25 @@ namespace lospoderosos_lite.Modules
                     PlayClickSound();
                 }
 
-                // Maximum precision sleep (Hybrid Sleep/Spin for 0 latency)
+                // Maximum precision sleep (Hybrid Sleep/Yield for 0 latency)
                 while (sw.ElapsedTicks < nextClickTick)
                 {
                     if (!Clicking || !_running) break;
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     
-                    if (leftMs > 2.5) // Only sleep if we have plenty of time
+                    if (leftMs > 2.0) // Only sleep if we have plenty of time
                     {
                         Thread.Sleep(1);
                     }
+                    else if (leftMs > 0.1)
+                    {
+                        // Yield to prevent CPU starvation, which fixes the "sensitivity goes up" bug at high CPS
+                        Thread.Sleep(0);
+                    }
                     else
                     {
-                        // Active spin for the last 2.5ms guarantees nanosecond precision
-                        // and prevents Windows from yielding the thread to Minecraft
+                        // Active spin for only the last 0.1ms guarantees precision without starving the CPU
                         Thread.SpinWait(10);
                     }
                 }
@@ -367,7 +348,10 @@ namespace lospoderosos_lite.Modules
             {
                 // Shift-click for refill: hold shift, click, with very fast hold timing
                 Win32.SendLeftDown();
-                Thread.Sleep(_rng.Next(4, 12));
+                // Use Stopwatch for precise short delay without risking Thread.Sleep inaccuracy
+                long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
+                long refStart = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) Thread.Sleep(0);
                 Win32.SendLeftUp();
                 return;
             }
@@ -376,15 +360,14 @@ namespace lospoderosos_lite.Modules
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(1, 4);
-                if (_rng.NextDouble() < 0.08) holdTime += _rng.Next(2, 6); // Occasional human lag releasing
+                int holdTime = _rng.Next(1, 3); // Faster hits optimization
                 
-                // Spin wait instead of Thread.Sleep to prevent context switch delays during a click
+                // Spin wait replaced with Sleep(0) to prevent CPU starvation and sensitivity bug during clicks
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {
-                    Thread.SpinWait(10);
+                    Thread.Sleep(0);
                 }
                 
                 Win32.SendLeftUp();
@@ -395,8 +378,11 @@ namespace lospoderosos_lite.Modules
                     if (_rng.NextDouble() < 0.45) // ~45% of hits will trigger W-Tap
                     {
                         Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0); // Release W
-                        Thread.Sleep(_rng.Next(10, 35));
-                        Win32.keybd_event(0x57, 0, 0, 0); // Press W again
+                        // Async W-Tap to prevent blocking the clicker thread at high CPS
+                        ThreadPool.QueueUserWorkItem(_ => {
+                            Thread.Sleep(_rng.Next(10, 30));
+                            Win32.keybd_event(0x57, 0, 0, 0); // Press W again
+                        });
                     }
                 }
             }
@@ -405,7 +391,7 @@ namespace lospoderosos_lite.Modules
                 // If in inventory, very quick release
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.SpinWait(10);
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
                 Win32.SendLeftUp();
             }
         }
