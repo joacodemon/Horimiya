@@ -78,7 +78,7 @@ internal static class Program
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.0");
+            Updater.CheckForUpdates("2.2.1");
             Console.WriteLine("");
             
             int totalBlocks = 30;
