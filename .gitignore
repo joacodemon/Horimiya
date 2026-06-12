@@ -1,0 +1,12 @@
+bin/
+obj/
+*.exe
+*.dll
+.vs/
+.vscode/
+build_output/
+imgui-build/
+imgui/
+.dotnet/
+tsukuyomi-clicker-source-main/
+*.zip

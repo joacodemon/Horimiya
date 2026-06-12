@@ -1,0 +1,17 @@
+{
+  "AverageCps": 13.4,
+  "Mode": 0,
+  "BBMode": 1,
+  "OnlyInGame": true,
+  "RmbLock": false,
+  "WorkInMenus": true,
+  "DiscordRpc": true,
+  "DiscordAppId": "1234567890123456789",
+  "TimerRes": true,
+  "Sound": "None",
+  "ClickBind": 0,
+  "HideBind": 0,
+  "RandLowPct": 15.0,
+  "RandHighPct": 15.0,
+  "ParticleEnabled": true
+}
