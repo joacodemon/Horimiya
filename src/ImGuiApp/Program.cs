@@ -72,7 +72,7 @@ internal static class Program
             Console.WriteLine(@"            /_/                                                 ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.0\n\n");
+            Console.WriteLine("                                           2.2.1\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");

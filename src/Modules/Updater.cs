@@ -24,7 +24,8 @@ namespace lospoderosos_lite.Modules
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine("Checking for updates...");
                     
-                    var response = client.DownloadString(VersionUrl);
+                    var noCacheUrl = VersionUrl + "?t=" + DateTime.Now.Ticks;
+                    var response = client.DownloadString(noCacheUrl);
                     if (!string.IsNullOrWhiteSpace(response))
                     {
                         var parts = response.Trim().Split('|');
@@ -67,12 +68,7 @@ namespace lospoderosos_lite.Modules
         {
             try
             {
-                string currentExe = AppDomain.CurrentDomain.FriendlyName;
-                if (!currentExe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-                    currentExe += ".exe";
-
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string currentPath = Path.Combine(baseDir, currentExe);
+                string currentPath = Process.GetCurrentProcess().MainModule.FileName;
                 string newPath = currentPath + ".new";
                 string oldPath = currentPath + ".old";
 
@@ -101,7 +97,7 @@ namespace lospoderosos_lite.Modules
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error al actualizar: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Error al actualizar:\n\n" + ex.ToString(), "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Failed to apply update: " + ex.Message);
             }
