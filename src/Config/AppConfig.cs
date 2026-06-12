@@ -43,6 +43,13 @@ namespace lospoderosos_lite.Config
         public int ClickBind = 0;
         public int HideBind = 0;
         public int RandMode = 0; // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Manual
+
+        public double RightAverageCps = 15.0;
+        public int RightMode = 0;
+        public int RightBind = 0;
+        public int RightRandMode = 0;
+        
+        public string CloudPresetsUrl = "";
         public MqttSettings Mqtt = new MqttSettings(); // MQTT configuration
         public double[] CustomCpsWeights = new double[25]; // CPS 1-25 weights
         public int ColorAccent = Color.FromArgb(0, 180, 255).ToArgb();
@@ -66,6 +73,16 @@ namespace lospoderosos_lite.Config
             Presets.Add(new PresetConfig { Name = "minemen.club",   Server = "minemen.club",   Cps = 19.5, RandMode = 2, IsBuiltIn = true });
         }
 
+        public void Save()
+        {
+            try
+            {
+                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs");
+                Directory.CreateDirectory(dir);
+                File.WriteAllText(Path.Combine(dir, "default.json"), this.ToJson());
+            } catch { }
+        }
+
         public string ToJson()
         {
             var sb = new StringBuilder();
@@ -83,6 +100,12 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"ClickBind\": {0},", ClickBind));
             sb.AppendLine(string.Format("  \"HideBind\": {0},", HideBind));
             sb.AppendLine(string.Format("  \"RandMode\": {0},", RandMode));
+            
+            sb.AppendLine(string.Format("  \"RightAverageCps\": {0} ,", RightAverageCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"RightMode\": {0},", RightMode));
+            sb.AppendLine(string.Format("  \"RightBind\": {0},", RightBind));
+            sb.AppendLine(string.Format("  \"RightRandMode\": {0},", RightRandMode));
+            sb.AppendLine(string.Format("  \"CloudPresetsUrl\": \"{0}\",", CloudPresetsUrl));
             sb.AppendLine(string.Format("  \"Mqtt\": {{\"Host\": \"{0}\", \"Port\": {1}, \"Username\": \"{2}\", \"Password\": \"{3}\", \"PublishTopic\": \"{4}\", \"SubscribeTopic\": \"{5}\", \"UseTls\": {6}, \"QoS\": {7}}},", Mqtt.Host, Mqtt.Port, Mqtt.Username, Mqtt.Password, Mqtt.PublishTopic, Mqtt.SubscribeTopic, Mqtt.UseTls ? "true" : "false", Mqtt.QoS));
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
             sb.AppendLine(string.Format("  \"ParticleEnabled\": {0},", ParticleEnabled ? "true" : "false"));
@@ -134,6 +157,12 @@ namespace lospoderosos_lite.Config
             cfg.ClickBind = GetInt(json, "ClickBind", cfg.ClickBind);
             cfg.HideBind = GetInt(json, "HideBind", cfg.HideBind);
             cfg.RandMode = GetInt(json, "RandMode", cfg.RandMode);
+            
+            cfg.RightAverageCps = GetDouble(json, "RightAverageCps", cfg.RightAverageCps);
+            cfg.RightMode = GetInt(json, "RightMode", cfg.RightMode);
+            cfg.RightBind = GetInt(json, "RightBind", cfg.RightBind);
+            cfg.RightRandMode = GetInt(json, "RightRandMode", cfg.RightRandMode);
+            cfg.CloudPresetsUrl = GetString(json, "CloudPresetsUrl", cfg.CloudPresetsUrl);
             cfg.Mqtt = GetMqttSettings(json);
 
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);

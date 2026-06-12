@@ -32,6 +32,7 @@ namespace lospoderosos_lite.Modules
 
         public event Action<bool> RpcStatusChanged;
         public event Action ClickBindTriggered;
+        public event Action RightClickBindTriggered;
         public event Action HideBindTriggered;
         public event Action DestructBindTriggered;
 
@@ -76,6 +77,7 @@ namespace lospoderosos_lite.Modules
         private void HotkeyLoop()
         {
             bool clickKeyWasDown = false;
+            bool rightClickKeyWasDown = false;
             bool hideKeyWasDown = false;
             bool destructKeyWasDown = false;
 
@@ -98,6 +100,25 @@ namespace lospoderosos_lite.Modules
                 else
                 {
                     clickKeyWasDown = false;
+                }
+
+                // Check Right Click Bind
+                int rightClickBind = _cfg.RightBind;
+                if (rightClickBind > 0)
+                {
+                    bool isDown = (Win32.GetAsyncKeyState(rightClickBind) & 0x8000) != 0;
+                    if (isDown && !rightClickKeyWasDown)
+                    {
+                        if (RightClickBindTriggered != null)
+                        {
+                            RightClickBindTriggered();
+                        }
+                    }
+                    rightClickKeyWasDown = isDown;
+                }
+                else
+                {
+                    rightClickKeyWasDown = false;
                 }
 
                 // Check Hide Bind

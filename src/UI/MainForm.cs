@@ -343,6 +343,7 @@ namespace lospoderosos_lite.UI
             _sldrCps = new FlatSlider(_cfg.AverageCps, 1.0, 50.0)
                 { Location = new Point(8, 36), Size = new Size(380, 22) };
             _sldrCps.ValueChanged += (s,e) => _cfg.AverageCps = _sldrCps.Value;
+            _sldrCps.MouseUp += (s,e) => _cfg.Save();
             lft.Controls.Add(Lbl("Average CPS", DIM, 395, 42, FNT));
 
             // Checkboxes
@@ -354,16 +355,9 @@ namespace lospoderosos_lite.UI
             _chkRmb.Click  += (s,e) => _cfg.RmbLock     = _chkRmb.Checked;
             _chkWim.Click  += (s,e) => _cfg.WorkInMenus = _chkWim.Checked;
 
-            // Break Blocks
-            lft.Controls.Add(Lbl("Break Blocks", TXT, 8, 166, FNT));
-            _dBB = new FlatDrop { Size = new Size(480, 18) };
-            _dBB.Items.AddRange(new object[] { "Off", "Full", "Sneak" });
-            _dBB.SelectedIndex = _cfg.BBMode;
-            _dBB.SelectedIndexChanged += (s,e) => _cfg.BBMode = _dBB.SelectedIndex;
-
             lft.Controls.Add(Lbl("Main click settings and restrictions.", DIM, 8, 210, FNT));
             lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
-                _chkOig, _chkRmb, _chkWim, AccentBorderWrap(_dBB, 7, 182, 482, 20) });
+                _chkOig, _chkRmb, _chkWim });
 
             // Right box
             var rgt = Box(RX, 40, RW, BH);

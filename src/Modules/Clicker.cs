@@ -173,46 +173,7 @@ namespace lospoderosos_lite.Modules
                 // Integrated Refill check: anytime cursor is shown and SHIFT is held
                 bool isRefilling = cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
 
-                // ── Break Blocks Check ──
-                if (!cursorShown)
-                {
-                    bool bbActive = false;
-                    
-                    // In Hold mode, Win32.IsLeftDown is what triggers the clicker.
-                    // If BBMode is Full (1), it would completely stop the clicker.
-                    // Usually "Full" BBMode is meant for Toggle/Always mode.
-                    if (_cfg.BBMode == 1 && Win32.IsLeftDown && _cfg.Mode != 0) 
-                    {
-                        bbActive = true;
-                    }
-                    else if (_cfg.BBMode == 2 && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0)) // Sneak
-                    {
-                        bbActive = true;
-                    }
 
-                    if (bbActive)
-                    {
-                        if (!_wasBbActive)
-                        {
-                            // Transitioning into Break Blocks!
-                            // The clicker might have just injected an LBUTTONUP which cancelled the physical LBUTTONDOWN.
-                            // We must send a fresh LBUTTONDOWN to ensure Minecraft starts breaking the block.
-                            if (Win32.IsLeftDown)
-                            {
-                                Win32.SendLeftDown();
-                            }
-                            _wasBbActive = true;
-                        }
-                        
-                        Thread.Sleep(10);
-                        nextClickTick = sw.ElapsedTicks;
-                        continue;
-                    }
-                    else
-                    {
-                        _wasBbActive = false;
-                    }
-                }
 
                 // ── Perform the click(s) ──
                 // [Removed] Unconditional click moved to mode‑specific block
@@ -225,24 +186,20 @@ namespace lospoderosos_lite.Modules
 
                 if (isRefilling)
                 {
-                    // Refill: extremely fast speed with slight randomization for fast potting/souping
-                    double refillBaseCps = REFILL_CPS_MIN + (_rng.NextDouble() * (REFILL_CPS_MAX - REFILL_CPS_MIN));
-                    
-                    // Add micro-variations per click
-                    double refillJitter = (_rng.NextDouble() * 4.0) - 2.0;
-                    double refillCps = Math.Max(15.0, refillBaseCps + refillJitter);
-                    
+                    // Safe Refill Logic: prevent picking up items ("se suban") by capping CPS
+                    // Minecraft struggles with inventory clicks faster than ~15 CPS.
+                    double refillCps = 12.0 + (_rng.NextDouble() * 2.0); // 12.0 - 14.0 CPS
                     delayMs = 1000.0 / refillCps;
                     
-                    // Small timing noise (±3ms)
-                    delayMs += (_rng.NextDouble() * 6.0 - 3.0);
+                    // Add micro-variations per click
+                    delayMs += (_rng.NextDouble() * 4.0 - 2.0);
                     
-                    // Simulate occasional tiny hesitation to bypass basic checks
+                    // Forced stutter to guarantee the server catches up, absolutely preventing item pickup
                     _refillClickCount++;
-                    int pauseThreshold = 8 + _rng.Next(8); // 8-15 clicks between pauses
+                    int pauseThreshold = 5 + _rng.Next(4); // 5-8 clicks between pauses
                     if (_refillClickCount >= pauseThreshold)
                     {
-                        delayMs += _rng.Next(15, 35);
+                        delayMs += _rng.Next(30, 50); // Large pause to let server sync inventory
                         _refillClickCount = 0;
                     }
                 }

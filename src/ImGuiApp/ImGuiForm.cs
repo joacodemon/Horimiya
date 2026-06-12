@@ -22,6 +22,7 @@ public class ImGuiForm : Form
     
     private AppConfig _cfg;
     private Clicker _clicker;
+    private RightClicker _rightClicker;
     private Recorder _recorder;
     private Misc _misc;
 
@@ -50,10 +51,11 @@ public class ImGuiForm : Form
     private List<string> _cachedSounds = null;
     private long _soundsCacheTimeMs = 0;
 
-    public ImGuiForm(AppConfig cfg, Clicker clicker, Recorder recorder, Misc misc)
+    public ImGuiForm(AppConfig cfg, Clicker clicker, RightClicker rightClicker, Recorder recorder, Misc misc)
     {
         _cfg = cfg;
         _clicker = clicker;
+        _rightClicker = rightClicker;
         _recorder = recorder;
         _misc = misc;
 
@@ -76,6 +78,9 @@ public class ImGuiForm : Form
         _recorder.StatusChanged += s => { _recorderStatus = s; };
         _misc.ClickBindTriggered += () => { 
             _clicker.Clicking = !_clicker.Clicking; 
+        };
+        _misc.RightClickBindTriggered += () => { 
+            _rightClicker.Clicking = !_rightClicker.Clicking; 
         };
         _misc.HideBindTriggered += () => { 
             if (Visible) Hide(); 
@@ -260,6 +265,11 @@ public class ImGuiForm : Form
                 DrawLMBTab();
                 ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("RMB"))
+            {
+                DrawRMBTab();
+                ImGui.EndTabItem();
+            }
 
             if (ImGui.BeginTabItem("PRESETS"))
             {
@@ -306,6 +316,7 @@ public class ImGuiForm : Form
         ImGui.SetNextItemWidth(300);
         if (ImGui.SliderFloat("Average CPS", ref cps, 1.0f, 50.0f, "%.1f"))
             _cfg.AverageCps = cps;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
 
         bool oig = _cfg.OnlyInGame;
         if (ImGui.Checkbox("Only In Game", ref oig)) _cfg.OnlyInGame = oig;
@@ -318,11 +329,7 @@ public class ImGuiForm : Form
         
 
 
-        string[] bbModes = { "Off", "Full", "Sneak" };
-        int bbIdx = _cfg.BBMode;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.Combo("Break Blocks", ref bbIdx, bbModes, bbModes.Length))
-            _cfg.BBMode = bbIdx;
+
 
         ImGui.NextColumn();
 
@@ -354,6 +361,53 @@ public class ImGuiForm : Form
                 ImGui.TreePop();
             }
         }
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Jitter: legit human-like variance");
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Butterfly: rapid double-click");
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "NoDelay: constant, no randomization");
+
+        ImGui.Columns(1);
+    }
+
+    private void DrawRMBTab()
+    {
+        ImGui.Text("Right Clicker Settings");
+        ImGui.Separator();
+
+        ImGui.Columns(2, "rmb_cols", false);
+        ImGui.SetColumnWidth(0, 450);
+
+        // Left column
+        bool clicking = _rightClicker.Clicking;
+        if (ImGui.Checkbox("Toggle Right Clicking", ref clicking))
+            _rightClicker.Clicking = clicking;
+
+        ImGui.SameLine(150);
+        string bindText = _cfg.RightBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.RightBind);
+        if (_bindMode && _bindingTarget == 3) bindText = "...press key...";
+        if (ImGui.Button(bindText, new Vector2(120, 0))) BeginBind(3);
+
+        ImGui.SameLine(280);
+        string[] modes = { "Hold", "Toggle", "Always" };
+        int modeIdx = _cfg.RightMode;
+        ImGui.SetNextItemWidth(100);
+        if (ImGui.Combo("Mode##RMB", ref modeIdx, modes, modes.Length))
+            _cfg.RightMode = modeIdx;
+
+        float cps = (float)_cfg.RightAverageCps;
+        ImGui.SetNextItemWidth(300);
+        if (ImGui.SliderFloat("Right Average CPS", ref cps, 1.0f, 50.0f, "%.1f"))
+            _cfg.RightAverageCps = cps;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+
+        ImGui.NextColumn();
+
+        // Right column
+        string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Manual" };
+        int randIdx = _cfg.RightRandMode;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.Combo("Randomization##RMB", ref randIdx, randModes, randModes.Length))
+            _cfg.RightRandMode = randIdx;
 
         ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Jitter: legit human-like variance");
         ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Butterfly: rapid double-click");
@@ -426,6 +480,45 @@ public class ImGuiForm : Form
         }
 
         ImGui.Separator();
+
+        if (ImGui.Button("☁ Download Cloud Presets"))
+        {
+            if (!string.IsNullOrWhiteSpace(_cfg.CloudPresetsUrl))
+            {
+                try
+                {
+                    using (var wc = new System.Net.WebClient())
+                    {
+                        string json = wc.DownloadString(_cfg.CloudPresetsUrl);
+                        // Very simple JSON array parse to extract names, servers, cps, randmode
+                        // Since we don't have NewtonSoft.Json easily available, doing a quick parse or using the existing parsing logic
+                        _recorderStatus = "Cloud presets downloaded!";
+                        // Just an example parse, should integrate with AppConfig.ParseUserPresets if possible
+                        // AppConfig.FromJson( "{\"UserPresets\":" + json + "}" ) might work if formatted right.
+                        var tempCfg = AppConfig.FromJson("{\"UserPresets\":" + json + "}");
+                        foreach(var cp in tempCfg.Presets)
+                        {
+                            if(!cp.IsBuiltIn) _cfg.Presets.Add(cp);
+                        }
+                        _cfg.Save();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _recorderStatus = "Error downloading presets: " + ex.Message;
+                }
+            }
+            else
+            {
+                _recorderStatus = "Cloud Presets URL is empty in config!";
+            }
+        }
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(200);
+        string cloudUrl = _cfg.CloudPresetsUrl;
+        if (ImGui.InputText("Cloud URL", ref cloudUrl, 256))
+            _cfg.CloudPresetsUrl = cloudUrl;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
 
         ImGui.BeginChild("presets_list");
         for (int i = 0; i < _cfg.Presets.Count; i++)
@@ -633,6 +726,7 @@ public class ImGuiForm : Form
         if (_bindingTarget == 0) _cfg.ClickBind = vk;
         else if (_bindingTarget == 1) _cfg.HideBind = vk;
         else if (_bindingTarget == 2) _cfg.DestructBind = vk;
+        else if (_bindingTarget == 3) _cfg.RightBind = vk;
     }
 
     private void OnFormClosing(object sender, FormClosingEventArgs e)
@@ -641,6 +735,7 @@ public class ImGuiForm : Form
 
         _bindTimer.Stop();
         _clicker.Stop();
+        _rightClicker.Stop();
         _recorder.Stop();
         _misc.Stop();
         Win32.StopMouseHook();

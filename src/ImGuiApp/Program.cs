@@ -42,6 +42,7 @@ internal static class Program
 
             // Initialize Modules
             var clicker = new Clicker(cfg);
+            var rightClicker = new RightClicker(cfg);
             var recorder = new Recorder();
             var misc = new Misc(cfg, clicker);
 
@@ -51,6 +52,7 @@ internal static class Program
             Win32.NtSetTimerResolution(5000, true, ref currentRes); // 0.5ms resolution via NTDLL
             
             clicker.Start();
+            rightClicker.Start();
             misc.Start();
             Win32.StartMouseHook();
 
@@ -72,13 +74,13 @@ internal static class Program
             Console.WriteLine(@"            /_/                                                 ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.2\n\n");
+            Console.WriteLine("                                           2.2.3\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.2");
+            Updater.CheckForUpdates("2.2.3");
             Console.WriteLine("");
             
             int totalBlocks = 30;
@@ -100,7 +102,7 @@ internal static class Program
             FreeConsole();
 
             // Run ImGui form
-            var form = new ImGuiForm(cfg, clicker, recorder, misc);
+            var form = new ImGuiForm(cfg, clicker, rightClicker, recorder, misc);
             Application.Run(form);
         }
         catch (Exception ex)

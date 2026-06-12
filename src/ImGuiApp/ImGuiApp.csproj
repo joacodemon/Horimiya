@@ -28,6 +28,7 @@
     <PackageReference Include="OpenTK" Version="3.3.3" />
     <PackageReference Include="OpenTK.GLControl" Version="3.3.3" />
     <Compile Include="..\Modules\Clicker.cs" />
+    <Compile Include="..\Modules\RightClicker.cs" />
     <Compile Include="..\Modules\Misc.cs" />
     <Compile Include="..\Modules\Recorder.cs" />
     <Compile Include="..\Modules\Updater.cs" />

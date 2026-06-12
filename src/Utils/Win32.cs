@@ -79,6 +79,22 @@ namespace lospoderosos_lite.Utils
             SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
         }
 
+        public static void SendRightDown()
+        {
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = 0; // INPUT_MOUSE
+            inputs[0].mi.dwFlags = 0x0008; // MOUSEEVENTF_RIGHTDOWN
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
+        public static void SendRightUp()
+        {
+            INPUT[] inputs = new INPUT[1];
+            inputs[0].type = 0; // INPUT_MOUSE
+            inputs[0].mi.dwFlags = 0x0010; // MOUSEEVENTF_RIGHTUP
+            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+        }
+
         [DllImport("user32.dll")]
         public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
