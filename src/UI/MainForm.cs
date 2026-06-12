@@ -349,11 +349,10 @@ namespace lospoderosos_lite.UI
             _chkOig  = new FlatCheck("Only In Game",    _cfg.OnlyInGame)  { Location = new Point(8, 66)  };
             _chkRmb  = new FlatCheck("RMB-Lock",        _cfg.RmbLock)     { Location = new Point(8, 90) };
             _chkWim  = new FlatCheck("Work in Menus",   _cfg.WorkInMenus) { Location = new Point(8, 114) };
-            _chkRefill = new FlatCheck("Refill Mode",   _cfg.RefillMode)  { Location = new Point(8, 138) };
+            
             _chkOig.Click  += (s,e) => _cfg.OnlyInGame  = _chkOig.Checked;
             _chkRmb.Click  += (s,e) => _cfg.RmbLock     = _chkRmb.Checked;
             _chkWim.Click  += (s,e) => _cfg.WorkInMenus = _chkWim.Checked;
-            _chkRefill.Click += (s,e) => _cfg.RefillMode = _chkRefill.Checked;
 
             // Break Blocks
             lft.Controls.Add(Lbl("Break Blocks", TXT, 8, 166, FNT));
@@ -364,7 +363,7 @@ namespace lospoderosos_lite.UI
 
             lft.Controls.Add(Lbl("Main click settings and restrictions.", DIM, 8, 210, FNT));
             lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
-                _chkOig, _chkRmb, _chkWim, _chkRefill, AccentBorderWrap(_dBB, 7, 182, 482, 20) });
+                _chkOig, _chkRmb, _chkWim, AccentBorderWrap(_dBB, 7, 182, 482, 20) });
 
             // Right box
             var rgt = Box(RX, 40, RW, BH);

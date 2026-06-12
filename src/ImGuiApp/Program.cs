@@ -72,13 +72,13 @@ internal static class Program
             Console.WriteLine(@"            /_/                                                 ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.1\n\n");
+            Console.WriteLine("                                           2.2.2\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.1");
+            Updater.CheckForUpdates("2.2.2");
             Console.WriteLine("");
             
             int totalBlocks = 30;

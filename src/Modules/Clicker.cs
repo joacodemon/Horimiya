@@ -170,8 +170,8 @@ namespace lospoderosos_lite.Modules
                     }
                 }
 
-                // Refill check: only when RefillMode is enabled in config, cursor is shown, and SHIFT is held
-                bool isRefilling = _cfg.RefillMode && cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
+                // Integrated Refill check: anytime cursor is shown and SHIFT is held
+                bool isRefilling = cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
 
                 // ── Break Blocks Check ──
                 if (!cursorShown)
@@ -369,34 +369,37 @@ namespace lospoderosos_lite.Modules
                 if (isButterfly)
                 {
                     // Butterfly: two rapid clicks with a tiny gap
-                    PerformClick(cursorShown, _cfg.RefillMode);
+                    PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
                     Thread.SpinWait(50); // ultra-short gap between the two clicks
                     int microGap = _rng.Next(10, 35); // 10-35ms gap for the second click
                     Thread.Sleep(microGap);
-                    PerformClick(cursorShown, _cfg.RefillMode);
+                    PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
                 }
                 else
                 {
-                    PerformClick(cursorShown, _cfg.RefillMode);
+                    PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
                 }
 
-                // High precision sleep (optimized for minimal CPU usage)
-                // With timeBeginPeriod(1) active, Thread.Sleep(1) is accurate to ~1ms
+                // Maximum precision sleep (Hybrid Sleep/Spin for 0 latency)
                 while (sw.ElapsedTicks < nextClickTick)
                 {
                     if (!Clicking || !_running) break;
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     
-                    if (leftMs > 1.5)
+                    if (leftMs > 2.5) // Only sleep if we have plenty of time
+                    {
                         Thread.Sleep(1);
-                    else if (leftMs > 0.5)
-                        Thread.Sleep(0);
+                    }
                     else
+                    {
+                        // Active spin for the last 2.5ms guarantees nanosecond precision
+                        // and prevents Windows from yielding the thread to Minecraft
                         Thread.SpinWait(10);
+                    }
                 }
             }
         }
@@ -418,7 +421,14 @@ namespace lospoderosos_lite.Modules
             {
                 int holdTime = _rng.Next(1, 4);
                 if (_rng.NextDouble() < 0.08) holdTime += _rng.Next(2, 6); // Occasional human lag releasing
-                Thread.Sleep(holdTime);
+                
+                // Spin wait instead of Thread.Sleep to prevent context switch delays during a click
+                long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
+                long startTicks = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
+                {
+                    Thread.SpinWait(10);
+                }
                 
                 Win32.SendLeftUp();
 
@@ -436,7 +446,9 @@ namespace lospoderosos_lite.Modules
             else
             {
                 // If in inventory, very quick release
-                Thread.Sleep(1);
+                long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
+                long startTicks = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.SpinWait(10);
                 Win32.SendLeftUp();
             }
         }

@@ -316,8 +316,7 @@ public class ImGuiForm : Form
         bool wim = _cfg.WorkInMenus;
         if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
         
-        bool refM = _cfg.RefillMode;
-        if (ImGui.Checkbox("Refill Mode", ref refM)) _cfg.RefillMode = refM;
+
 
         string[] bbModes = { "Off", "Full", "Sneak" };
         int bbIdx = _cfg.BBMode;
