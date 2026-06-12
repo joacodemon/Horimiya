@@ -10,14 +10,17 @@ namespace lospoderosos_lite.Modules
     {
         // IMPORTANTE: Este archivo debe existir en tu GitHub.
         // Ejemplo de contenido de version.txt: 2.3.0|https://tu-sitio.com/lospoderosos.exe
-        public static string VersionUrl = "https://github.com/joacodemon/lospoderosos/blob/main/version.txt";
+        public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/lospoderosos/main/version.txt";
         
         public static void CheckForUpdates(string currentVersion)
         {
             try
             {
+                // Asegurarse de usar TLS 1.2 (Requerido por GitHub)
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 using (var client = new WebClient())
                 {
+                    client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     Console.WriteLine("Checking for updates...");
                     
@@ -51,10 +54,11 @@ namespace lospoderosos_lite.Modules
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("Failed to check for updates (server unreachable or invalid URL).");
+                Console.WriteLine($"Error Details: {ex.Message}");
             }
             Console.ForegroundColor = ConsoleColor.Gray;
         }
@@ -74,6 +78,7 @@ namespace lospoderosos_lite.Modules
 
                 using (var webClient = new WebClient())
                 {
+                    webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
                     webClient.DownloadFile(url, newPath);
                 }
 
