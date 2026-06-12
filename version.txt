@@ -1,1 +1,1 @@
-2.2.0|https://github.com/joacodemon/lospoderosos/releases/download/v2.2.0/lospoderosos.exe
+2.2.0|https://github.com/joacodemon/lospoderosos/releases/download/lospoderosos/lospoderosos.exe
