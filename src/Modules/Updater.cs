@@ -10,7 +10,7 @@ namespace lospoderosos_lite.Modules
     {
         // IMPORTANTE: Este archivo debe existir en tu GitHub.
         // Ejemplo de contenido de version.txt: 2.3.0|https://tu-sitio.com/lospoderosos.exe
-        public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/lospoderosos/main/version.txt";
+        public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/lospoderosos/master/version.txt";
         
         public static void CheckForUpdates(string currentVersion)
         {
