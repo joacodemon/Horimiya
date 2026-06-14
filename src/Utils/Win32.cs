@@ -39,7 +39,7 @@ namespace lospoderosos_lite.Utils
         [DllImport("user32.dll")]
         public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 
-        // ── SendInput support (used for anti‑cheat‑friendly clicks) ────────────────────────
+        // ── SendInput support (for future use) ────────────────────────────────────────────────
         [DllImport("user32.dll")]
         public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
@@ -61,38 +61,29 @@ namespace lospoderosos_lite.Utils
             public IntPtr dwExtraInfo;
         }
 
-        // Helper to perform left down
+        // ── Click helpers: use mouse_event for reliable aim-assist compatible clicks ─────────
+        // mouse_event with dx=0, dy=0 sends ONLY button events without touching cursor position,
+        // so external aim assists can freely move the mouse without interference.
+        // dwExtraInfo=0x1337 tags synthetic clicks so the low-level hook can filter them.
+
         public static void SendLeftDown()
         {
-            INPUT[] inputs = new INPUT[1];
-            inputs[0].type = 0; // INPUT_MOUSE
-            inputs[0].mi.dwFlags = 0x0002; // MOUSEEVENTF_LEFTDOWN
-            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+            mouse_event(0x0002, 0, 0, 0, 0x1337);
         }
 
-        // Helper to perform left up
         public static void SendLeftUp()
         {
-            INPUT[] inputs = new INPUT[1];
-            inputs[0].type = 0; // INPUT_MOUSE
-            inputs[0].mi.dwFlags = 0x0004; // MOUSEEVENTF_LEFTUP
-            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+            mouse_event(0x0004, 0, 0, 0, 0x1337);
         }
 
         public static void SendRightDown()
         {
-            INPUT[] inputs = new INPUT[1];
-            inputs[0].type = 0; // INPUT_MOUSE
-            inputs[0].mi.dwFlags = 0x0008; // MOUSEEVENTF_RIGHTDOWN
-            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+            mouse_event(0x0008, 0, 0, 0, 0x1337);
         }
 
         public static void SendRightUp()
         {
-            INPUT[] inputs = new INPUT[1];
-            inputs[0].type = 0; // INPUT_MOUSE
-            inputs[0].mi.dwFlags = 0x0010; // MOUSEEVENTF_RIGHTUP
-            SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+            mouse_event(0x0010, 0, 0, 0, 0x1337);
         }
 
         [DllImport("user32.dll")]
@@ -187,9 +178,9 @@ namespace lospoderosos_lite.Utils
             if (nCode >= 0)
             {
                 MSLLHOOKSTRUCT hookStruct = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
-                bool isInjected = (hookStruct.flags & 1) != 0; // LLMHF_INJECTED
-
-                if (!isInjected)
+                
+                // Ignore our own injected clicks by checking the custom dwExtraInfo tag
+                if (hookStruct.dwExtraInfo != (IntPtr)0x1337)
                 {
                     if (wParam == (IntPtr)WM_LBUTTONDOWN) IsLeftDown = true;
                     if (wParam == (IntPtr)WM_LBUTTONUP) IsLeftDown = false;

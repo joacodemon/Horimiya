@@ -36,6 +36,11 @@ namespace lospoderosos_lite.Modules
         private const double REFILL_CPS_MIN = 25.0;
         private const double REFILL_CPS_MAX = 38.0;
 
+        // Custom mode state: streak-based smoothing
+        private double _customTargetCps = 15.0; // CPS picked from the weighted distribution
+        private double _customCurrentCps = 15.0; // smoothed value drifting toward target
+        private int    _customStreakLeft  = 0;    // clicks remaining at current target before re-rolling
+
         // ── Performance cache fields ──
         // Cache Minecraft focus check to avoid StringBuilder alloc + GetWindowText every tick
         private bool _lastFocusResult = false;
@@ -119,8 +124,18 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // ── Mode check ──
-                // El usuario quiere que siempre funcione manteniendo el click (función de autoclicker)
-                bool shouldClick = Win32.IsLeftDown;
+                // Mode 0 = Hold:   only click while LMB is physically held
+                // Mode 1 = Toggle: click continuously once toggled on (Clicking flag handles this)
+                // Mode 2 = Always: click continuously regardless of LMB state
+                bool shouldClick;
+                if (_cfg.Mode == 0) // Hold
+                {
+                    shouldClick = Win32.IsLeftDown;
+                }
+                else // Toggle (1) or Always (2): just click freely
+                {
+                    shouldClick = true;
+                }
 
                 if (!shouldClick)
                 {
@@ -136,18 +151,18 @@ namespace lospoderosos_lite.Modules
                     continue;
                 }
 
-                // ── Focus check (cached) ──
+                // ── Focus check (cached) — only enforced when OnlyInGame is enabled ──
                 IntPtr foregroundWnd = Win32.GetForegroundWindow();
-                if (!CachedIsMinecraftFocused(foregroundWnd))
+                if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
                 {
                     Thread.Sleep(10);
                     continue;
                 }
 
                 // ── Menu / Inventory restriction (cached cursor check) ──
+                // Skipped entirely when WorkInMenus is enabled
                 bool cursorShown = CachedIsCursorVisible();
-                // El usuario pidió que si hay cursor (estamos en un menú), SOLO funcione en el inventario.
-                if (cursorShown)
+                if (cursorShown && !_cfg.WorkInMenus)
                 {
                     if (!CachedIsInventoryLikeScreen(foregroundWnd))
                     {
@@ -161,129 +176,112 @@ namespace lospoderosos_lite.Modules
 
 
 
-                // ── Perform the click(s) ──
-                // [Removed] Unconditional click moved to mode‑specific block
-
                 // ── Randomization Mode ──
                 double targetCps = _cfg.AverageCps;
                 bool isButterfly = false;
 
                 double delayMs;
 
+                // ── REFILL OVERRIDE: siempre 20 CPS exactos al shiftear, sin importar nada ──
+                if (isRefilling)
+                {
+                    delayMs = 1000.0 / 20.0; // 50ms = 20 CPS, fijo, sin randomización
+                }
+                else
+
                 if (_cfg.RandMode == 3) // ── Manual Custom Randomization ──
                 {
                     double sumWeights = 0;
                     for (int i = 0; i < 25; i++) sumWeights += _cfg.CustomCpsWeights[i];
 
-                    double chosenCps = targetCps; // Fallback to target
-                    if (sumWeights > 0)
+                    // Re-roll target from distribution every 3-8 clicks (creates human "streaks")
+                    if (sumWeights > 0 && _customStreakLeft <= 0)
                     {
                         double roll = _rng.NextDouble() * sumWeights;
-                        double accumulator = 0;
+                        double acc  = 0;
                         for (int i = 0; i < 25; i++)
                         {
-                            accumulator += _cfg.CustomCpsWeights[i];
-                            if (roll <= accumulator)
-                            {
-                                chosenCps = i + 1; // CPS is index + 1
-                                break;
-                            }
+                            acc += _cfg.CustomCpsWeights[i];
+                            if (roll <= acc) { _customTargetCps = i + 1; break; }
                         }
+                        _customStreakLeft = _rng.Next(3, 9); // stay at this speed 3-8 clicks
                     }
-                    
-                    delayMs = 1000.0 / Math.Max(1.0, chosenCps);
-                    // Add micro-noise to prevent purely synthetic constant delays
-                    delayMs += (_rng.NextDouble() * 3.0 - 1.5); 
-                }
-                else if (_cfg.RandMode == 2) // ── NoDelay: constant timing ──
-                {
-                    double actualCps = targetCps;
-                    double roll = _rng.NextDouble();
-                    
-                    if (roll < 0.35) 
-                    {
-                         // 35% chance to round down (e.g. 13.5 -> 13.0)
-                         actualCps = Math.Floor(targetCps);
-                    } 
-                    else if (roll < 0.55)
-                    {
-                         // 20% chance to round up (e.g. 13.5 -> 14.0)
-                         actualCps = Math.Ceiling(targetCps);
-                    }
-                    else if (roll > 0.95)
-                    {
-                         // 5% chance to drop 1 CPS below floor (e.g. 13.5 -> 12.0)
-                         actualCps = Math.Floor(targetCps) - 1.0;
-                    }
-                    // 40% of the time stays exactly at targetCps
+                    _customStreakLeft--;
 
-                    delayMs = 1000.0 / Math.Max(1.0, actualCps);
+                    // Spring: smoothly drift currentCps toward the newly chosen target
+                    // (35% pull per click → reaches target in ~5 clicks, looks natural)
+                    _customCurrentCps += (_customTargetCps - _customCurrentCps) * 0.35;
+
+                    // Sub-integer Gaussian noise so timing is never a perfectly round number
+                    double customNoise = NextGaussian() * 0.20;
+                    double finalCustomCps = Math.Max(1.0, _customCurrentCps + customNoise);
+
+                    delayMs = 1000.0 / finalCustomCps;
+                    // Small timing jitter ±1.5ms to break synthetic regularity
+                    delayMs += (_rng.NextDouble() * 3.0 - 1.5);
                 }
-                else if (_cfg.RandMode == 1) // ── Butterfly: double-click ──
+                else if (_cfg.RandMode == 2) // ── NoDelay: stable, predictable distribution ──
                 {
-                    // Random drop of 0 to 2.5 CPS to simulate "13 14 15" for a 15 target
-                    double drop = _rng.NextDouble() * 2.5;
+                    // N   = floor(target)  → most common (60%)
+                    // N+1 = floor+1        → regular     (30%)
+                    // N+2 = floor+2        → occasional  (7%)
+                    // N-1 = floor-1        → rare drop   (3%)
+                    // Example at 15 CPS:  mostly 15, regular 16, rare 17, very rare 14
+                    // Example at 20 CPS:  mostly 20, regular 21, rare 22, very rare 19
+                    double fl = Math.Floor(targetCps);
+                    double roll = _rng.NextDouble();
+                    double actualCps;
+                    if      (roll < 0.60) actualCps = fl;                      // 60% → N
+                    else if (roll < 0.90) actualCps = fl + 1.0;                // 30% → N+1
+                    else if (roll < 0.97) actualCps = fl + 2.0;                // 7%  → N+2
+                    else                  actualCps = Math.Max(1.0, fl - 1.0); // 3%  → N-1
+                    delayMs = 1000.0 / actualCps;
+                }
+                else if (_cfg.RandMode == 1) // ── Butterfly: double-click, stable ──
+                {
+                    // Butterfly sends 2 clicks per cycle.
+                    // To achieve N CPS with 2 clicks/cycle → cycle must last 2000/N ms.
+                    // e.g. 15 CPS → 133ms cycle → 2 clicks in 133ms = 15 CPS ✓
+                    double drop = _rng.NextDouble() * 0.5; // tiny variation ±0.5 CPS
                     double butterflyCps = Math.Max(1.0, targetCps - drop);
-                    
-                    // Butterfly simulates pressing with two fingers alternating
-                    // We send 2 clicks per cycle, so the cycle interval = 2 / butterflyCps
-                    double cycleCps = butterflyCps / 2.0;
-                    delayMs = 1000.0 / Math.Max(0.5, cycleCps);
-                    
-                    // Add slight timing noise (±4ms) to make it more human
-                    delayMs += (_rng.NextDouble() * 8.0 - 4.0);
-                    
+                    delayMs = 2000.0 / butterflyCps; // ← KEY FIX: 2000 not 1000
+                    delayMs += (_rng.NextDouble() * 2.0 - 1.0); // ±1ms noise
                     isButterfly = true;
                 }
-                else // ── Jitter (Mode 0): legit human-like randomization ──
+                else // ── Jitter (Mode 0): legit human-like, tight and smooth ──
                 {
-                    // Humans have momentum in their clicking speed. 
-                    // We slowly drift the current CPS rather than randomizing completely from scratch every click.
-                    
-                    // 1. Momentum drift (Perlin-like 1D random walk)
-                    double drift = NextGaussian() * 0.4; 
-                    jitterMomentum = (jitterMomentum * 0.75) + drift; // Smooth the momentum
-                    
-                    // 2. Apply momentum to current CPS
+                    // Gentle momentum random walk — small drift so CPS stays close to target
+                    double drift = NextGaussian() * 0.25;              // was 0.4, now tighter
+                    jitterMomentum = (jitterMomentum * 0.70) + drift;  // decays faster
+
                     currentJitterCps += jitterMomentum;
-                    
-                    // 3. Spring force to pull it back towards the target CPS
+
+                    // Strong spring: 30% pull-back per click keeps it close to target
                     double diff = targetCps - currentJitterCps;
-                    currentJitterCps += diff * 0.20; // 20% spring back per click
-                    
-                    // 4. Fatigue / Drop logic (humans randomly drop a click)
+                    currentJitterCps += diff * 0.30;                   // was 0.20
+
                     double finalCps = currentJitterCps;
-                    if (_rng.NextDouble() < 0.035) // 3.5% chance to drop heavily (muscle lag)
+
+                    // Fatigue drop: 2% chance, less severe (70–90% speed)
+                    if (_rng.NextDouble() < 0.02)
                     {
-                        finalCps *= (0.60 + _rng.NextDouble() * 0.20); // Drop to 60%-80% speed for one click
-                        jitterMomentum -= 1.5; // Negatively impact momentum
+                        finalCps *= (0.70 + _rng.NextDouble() * 0.20);
+                        jitterMomentum -= 0.8;
                     }
-                    
-                    // 5. Spasm / Twitch logic (humans randomly tense up)
-                    else if (_rng.NextDouble() < 0.025)
+                    // Spasm: 1.5% chance, mild burst (105–120% speed)
+                    else if (_rng.NextDouble() < 0.015)
                     {
-                        finalCps *= (1.15 + _rng.NextDouble() * 0.20); // Jump 15%-35% faster
-                        jitterMomentum += 1.5;
+                        finalCps *= (1.05 + _rng.NextDouble() * 0.15);
+                        jitterMomentum += 0.8;
                     }
-                    
-                    // Clamp it to reasonable human bounds
-                    finalCps = Math.Max(targetCps - 5.0, Math.Min(targetCps + 4.0, finalCps));
+
+                    // Tight clamp: ±2 CPS around target so it never feels robotic but stays close
+                    finalCps = Math.Max(targetCps - 2.0, Math.Min(targetCps + 2.0, finalCps));
                     finalCps = Math.Max(1.0, finalCps);
 
                     delayMs = 1000.0 / finalCps;
-
-                    // Add high-frequency timing noise (humans can't release exactly on time)
-                    delayMs += (_rng.NextDouble() * 12.0 - 6.0); // ±6ms raw jitter
-                }
-
-                if (isRefilling && targetCps >= 15.0)
-                {
-                    _refillClickCount++;
-                    if (_refillClickCount >= (8 + _rng.Next(4)))
-                    {
-                        delayMs += _rng.Next(15, 25); // tiny pause to prevent items sticking without killing CPS
-                        _refillClickCount = 0;
-                    }
+                    // Low-frequency timing noise ±2ms (was ±6ms)
+                    delayMs += (_rng.NextDouble() * 4.0 - 2.0);
                 }
 
                 delayMs = Math.Max(3.0, delayMs);
@@ -303,13 +301,15 @@ namespace lospoderosos_lite.Modules
                 if (isButterfly)
                 {
                     // Butterfly: two rapid clicks with a tiny gap
+                    // microGap is deducted from delayMs so the total cycle = delayMs
+                    int microGap = _rng.Next(4, 13); // 4-12ms gap between the two sub-clicks
                     PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
-                    Thread.SpinWait(50); // ultra-short gap between the two clicks
-                    int microGap = _rng.Next(10, 35); // 10-35ms gap for the second click
                     Thread.Sleep(microGap);
                     PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
+                    // Compensate: reduce the upcoming wait by the gap we already spent
+                    nextClickTick -= (long)(microGap * Stopwatch.Frequency / 1000.0);
                 }
                 else
                 {
@@ -371,6 +371,13 @@ namespace lospoderosos_lite.Modules
                 }
                 
                 Win32.SendLeftUp();
+
+                // ── Aim-Assist Cooperation Window ──
+                // After releasing the click, yield briefly so external aim assists
+                // can inject their mouse-move corrections into the input queue
+                // before the next click-down. Without this, rapid click-down events
+                // can "eat" aim-assist movements because SendInput batches are atomic.
+                Thread.Sleep(0); // Yield CPU slice to let aim-assist process
 
                 // W-Tap Logic (Reset sprint to deal more knockback and take less)
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
