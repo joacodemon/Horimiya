@@ -283,7 +283,7 @@ namespace lospoderosos_lite.Modules
                     // (con GetAsyncKeyState) para el aim assist, mientras que Minecraft
                     // recibe los clicks rápidos del autoclicker sin enterarse de la diferencia.
                     
-                    Win32.PostLeftDown(foregroundWnd);
+                    IntPtr clickLParam = Win32.PostLeftDown(foregroundWnd);
                     PlayClickSound();
 
                     // W-Tap
@@ -300,13 +300,15 @@ namespace lospoderosos_lite.Modules
                         }
                     }
 
-                    // Hold time suficiente para que el message pump de Minecraft procese el click
-                    int holdTime = _rng.Next(12, 18);
+                    // Hold time corto para PostMessage: el mensaje se encola directo en Minecraft,
+                    // no necesita hold largo. 3-6ms es suficiente para que el message pump
+                    // procese DOWN antes de recibir UP, sin robar tiempo del intervalo de CPS.
+                    int holdTime = _rng.Next(3, 6);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
-                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
+                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.SpinWait(20);
 
-                    Win32.PostLeftUp(foregroundWnd);
+                    Win32.PostLeftUp(foregroundWnd, clickLParam);
                 }
 
                 // Espera de precision hasta el proximo tick
@@ -328,27 +330,27 @@ namespace lospoderosos_lite.Modules
         {
             if (refillMode && inInventory)
             {
-                Win32.PostLeftDown(foregroundWnd);
+                IntPtr lP = Win32.PostLeftDown(foregroundWnd);
                 long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
                 long refStart = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) Thread.Sleep(0);
-                Win32.PostLeftUp(foregroundWnd);
+                Win32.PostLeftUp(foregroundWnd, lP);
                 return;
             }
 
-            Win32.PostLeftDown(foregroundWnd);
+            IntPtr lParam = Win32.PostLeftDown(foregroundWnd);
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(12, 18);
+                int holdTime = _rng.Next(3, 6);
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {
-                    Thread.Sleep(0);
+                    Thread.SpinWait(20);
                 }
                 
-                Win32.PostLeftUp(foregroundWnd);
+                Win32.PostLeftUp(foregroundWnd, lParam);
 
                 // W-Tap Logic
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
@@ -368,7 +370,7 @@ namespace lospoderosos_lite.Modules
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
-                Win32.PostLeftUp(foregroundWnd);
+                Win32.PostLeftUp(foregroundWnd, lParam);
             }
         }
 
