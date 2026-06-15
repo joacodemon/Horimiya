@@ -123,28 +123,7 @@ namespace lospoderosos_lite.Utils
         public static volatile bool IsLeftDown = false;
         public static volatile bool IsRightDown = false;
 
-        // ── Aim-Assist Movement Detection ────────────────────────────────────
-        // When XClient's aim assist rotates the mouse it injects WM_MOUSEMOVE
-        // events with dwExtraInfo != 0x1337 (not ours).  We track those to give
-        // the Clicker a "do not click" window right after a rotation event so
-        // both the aim assist and clicker can work without stomping each other.
-        private static volatile int _aimMoveTimestamp = 0;   // Environment.TickCount of last injected move
-        private const int AIM_MOVE_WINDOW_MS = 6;            // ms to wait after a rotation before clicking
-
-        /// <summary>
-        /// Returns true if an aim-assist mouse-move was detected within the last
-        /// AIM_MOVE_WINDOW_MS milliseconds (i.e., the aim assist is currently rotating).
-        /// The Clicker should skip its click-down during this window.
-        /// </summary>
-        public static bool IsAimAssistMoving()
-        {
-            int ts = _aimMoveTimestamp;
-            if (ts == 0) return false;
-            return (Environment.TickCount - ts) < AIM_MOVE_WINDOW_MS;
-        }
-
         private const int WH_MOUSE_LL = 14;
-        private const int WM_MOUSEMOVE   = 0x0200;
         private const int WM_LBUTTONDOWN = 0x0201;
         private const int WM_LBUTTONUP   = 0x0202;
         private const int WM_RBUTTONDOWN = 0x0204;
@@ -207,16 +186,6 @@ namespace lospoderosos_lite.Utils
                     if (wParam == (IntPtr)WM_LBUTTONUP)   IsLeftDown = false;
                     if (wParam == (IntPtr)WM_RBUTTONDOWN)  IsRightDown = true;
                     if (wParam == (IntPtr)WM_RBUTTONUP)    IsRightDown = false;
-
-                    // Detect injected mouse-move events from aim assist (XClient, etc.).
-                    // A real physical mouse move always has dwExtraInfo == 0.  Cheats that
-                    // inject via SendInput typically leave dwExtraInfo == 0 too, but the
-                    // key signal is that the move is "synthetic" (flags bit 0 = LLMHF_INJECTED).
-                    // We check the INJECTED flag (0x01) on the hook struct's flags field.
-                    if (wParam == (IntPtr)WM_MOUSEMOVE && (hookStruct.flags & 0x01) != 0)
-                    {
-                        _aimMoveTimestamp = Environment.TickCount;
-                    }
                 }
             }
             return CallNextHookEx(_hookID, nCode, wParam, lParam);

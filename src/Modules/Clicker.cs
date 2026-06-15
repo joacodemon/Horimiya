@@ -151,17 +151,6 @@ namespace lospoderosos_lite.Modules
                     continue;
                 }
 
-                // ── Aim-Assist Compat: esperar si XClient está rotando el mouse ──
-                // Cuando el aim assist inyecta un WM_MOUSEMOVE, damos una micro-ventana
-                // para que la rotación llegue al juego antes del click-down.
-                // Esto evita que el click "pise" la rotación en la cola de input.
-                if (_cfg.AimAssistCompat && Win32.IsAimAssistMoving())
-                {
-                    Thread.Sleep(1);
-                    nextClickTick = sw.ElapsedTicks; // reset para no acumular deuda de clicks
-                    continue;
-                }
-
                 // ── Focus check (cached) — only enforced when OnlyInGame is enabled ──
                 IntPtr foregroundWnd = Win32.GetForegroundWindow();
                 if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
@@ -384,14 +373,11 @@ namespace lospoderosos_lite.Modules
                 Win32.SendLeftUp();
 
                 // ── Aim-Assist Cooperation Window ──
-                // Después de soltar el click, cedemos la CPU para que el aim assist
-                // de XClient pueda procesar su rotación antes del próximo click-down.
-                // Con AimAssistCompat activo usamos un yield más generoso (Thread.Sleep(0)
-                // cede el quantum completo, ~1ms, sin bloquear el thread).
-                if (_cfg.AimAssistCompat)
-                    Thread.Sleep(0); // cede el quantum, aim assist entra a la cola
-                else
-                    Thread.SpinWait(5); // spin mínimo si compat está desactivado
+                // Cede el quantum de CPU tras soltar el click para que XClient pueda
+                // procesar su rotacion antes del proximo click-down.
+                // mouse_event(dx=0, dy=0) no toca la posicion del cursor, por lo que
+                // los clicks son compatibles con cualquier aim assist por diseno.
+                Thread.Sleep(0);
 
                 // W-Tap Logic (Reset sprint to deal more knockback and take less)
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)

@@ -62,7 +62,6 @@ namespace lospoderosos_lite.Config
         public bool StreamerMode = false;
         public int DestructBind = 0;
         public bool WTapEnabled = false;
-        public bool AimAssistCompat = true; // Pause click-down during XClient aim-assist rotation window
         public List<PresetConfig> Presets = new List<PresetConfig>();
 
         public AppConfig()
@@ -118,7 +117,6 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"StreamerMode\": {0},", StreamerMode ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DestructBind\": {0},", DestructBind));
             sb.AppendLine(string.Format("  \"WTapEnabled\": {0},", WTapEnabled ? "true" : "false"));
-            sb.AppendLine(string.Format("  \"AimAssistCompat\": {0},", AimAssistCompat ? "true" : "false"));
 
             sb.Append("  \"CustomCpsWeights\": [");
             for (int i = 0; i < CustomCpsWeights.Length; i++)
@@ -177,7 +175,6 @@ namespace lospoderosos_lite.Config
             cfg.StreamerMode = GetBool(json, "StreamerMode", cfg.StreamerMode);
             cfg.DestructBind = GetInt(json, "DestructBind", cfg.DestructBind);
             cfg.WTapEnabled = GetBool(json, "WTapEnabled", cfg.WTapEnabled);
-            cfg.AimAssistCompat = GetBool(json, "AimAssistCompat", cfg.AimAssistCompat);
 
             double[] loadedWeights = GetDoubleArray(json, "CustomCpsWeights");
             if (loadedWeights != null && loadedWeights.Length == 25)
