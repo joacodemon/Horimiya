@@ -76,6 +76,47 @@ namespace lospoderosos_lite.Utils
             mouse_event(0x0004, 0, 0, 0, 0x1337);
         }
 
+        // Versiones sin tag 0x1337: el hook no las filtra, XClient las ve como clicks reales.
+        // Usadas en Toggle/Always mode para que el aim assist de XClient las reconozca.
+        public static void SendLeftDownNative()
+        {
+            mouse_event(0x0002, 0, 0, 0, 0);
+        }
+
+        public static void SendLeftUpNative()
+        {
+            mouse_event(0x0004, 0, 0, 0, 0);
+        }
+
+        // ── PostMessage Clicks (Bypass Windows global queue) ─────────────────
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern bool ScreenToClient(IntPtr hWnd, ref Point lpPoint);
+
+        public static void PostLeftDown(IntPtr hwnd)
+        {
+            Point p;
+            if (GetCursorPos(out p))
+            {
+                ScreenToClient(hwnd, ref p);
+                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                PostMessage(hwnd, 0x0201, (IntPtr)1, lParam); // WM_LBUTTONDOWN, MK_LBUTTON
+            }
+        }
+
+        public static void PostLeftUp(IntPtr hwnd)
+        {
+            Point p;
+            if (GetCursorPos(out p))
+            {
+                ScreenToClient(hwnd, ref p);
+                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
+            }
+        }
+
         public static void SendRightDown()
         {
             mouse_event(0x0008, 0, 0, 0, 0x1337);

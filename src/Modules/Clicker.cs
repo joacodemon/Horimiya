@@ -103,18 +103,14 @@ namespace lospoderosos_lite.Modules
             double jitterMomentum = 0;
 
             // ── Aim-Assist compatible state ────────────────────────────────────
-            // En modo in-game, el LMB se manda DOWN y queda asi durante toda la
-            // espera entre clicks. El UP se envia SOLO justo antes del siguiente DOWN.
-            // De esta forma XClient ve VK_LBUTTON como "held" ~99.9% del tiempo
-            // y el aim assist funciona sin interrupciones.
-            bool pendingUp = false; // true = hay un DOWN enviado que todavia no tiene UP
+            bool globalHoldActive = false; // Mantiene el LMB "presionado" globalmente para Toggle/Always
 
             while (_running)
             {
-                // Si Clicking esta OFF, liberar LMB si es necesario y dormir
+                // Si Clicking esta OFF, dormir
                 if (!Clicking)
                 {
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(15);
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
@@ -131,16 +127,27 @@ namespace lospoderosos_lite.Modules
 
                 if (!shouldClick)
                 {
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(5);
                     nextClickTick = sw.ElapsedTicks;
                     continue;
+                }
+                else if (_cfg.Mode != 0) // Toggle o Always
+                {
+                    // En Toggle/Always el usuario no está sosteniendo el click físico.
+                    // XClient necesita ver el LMB presionado para activar el aim assist.
+                    // Mandamos un DOWN global para "engañar" al aim assist.
+                    if (!globalHoldActive)
+                    {
+                        Win32.SendLeftDownNative();
+                        globalHoldActive = true;
+                    }
                 }
 
                 // ── RMB-Lock ──
                 if (_cfg.RmbLock && Win32.IsRightDown)
                 {
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(5);
                     continue;
                 }
@@ -149,7 +156,7 @@ namespace lospoderosos_lite.Modules
                 IntPtr foregroundWnd = Win32.GetForegroundWindow();
                 if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
                 {
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(10);
                     continue;
                 }
@@ -160,7 +167,7 @@ namespace lospoderosos_lite.Modules
                 {
                     if (!CachedIsInventoryLikeScreen(foregroundWnd))
                     {
-                        if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                        if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                         Thread.Sleep(10);
                         continue;
                     }
@@ -253,45 +260,30 @@ namespace lospoderosos_lite.Modules
                 if (isButterfly)
                 {
                     // Butterfly: doble-click tradicional (UP+DOWN rapido)
-                    // No aplica el modo hold-through porque la naturaleza del butterfly
-                    // requiere ciclos rapidos de UP/DOWN.
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     int microGap = _rng.Next(4, 13);
-                    PerformClick(cursorShown, isRefilling);
+                    PerformClick(cursorShown, isRefilling, foregroundWnd);
                     PlayClickSound();
                     Thread.Sleep(microGap);
-                    PerformClick(cursorShown, isRefilling);
+                    PerformClick(cursorShown, isRefilling, foregroundWnd);
                     PlayClickSound();
                     nextClickTick -= (long)(microGap * Stopwatch.Frequency / 1000.0);
                 }
                 else if (cursorShown || isRefilling)
                 {
                     // Inventario / Refill: click tradicional rapido
-                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
-                    PerformClick(cursorShown, isRefilling);
+                    PerformClick(cursorShown, isRefilling, foregroundWnd);
                     PlayClickSound();
                 }
                 else
                 {
-                    // ── IN-GAME: Modo Hold-Through (Aim Assist Compatible) ──
-                    // El LMB baja al inicio del click y NO sube hasta el proximo ciclo.
-                    // VK_LBUTTON permanece DOWN durante toda la espera entre clicks.
-                    // XClient ve LMB como "held" constantemente -> aim assist siempre activo.
-                    //
-                    // Timing: [UP-from-prev (tiny gap) | DOWN | wait cycleTime | UP-from-prev | DOWN ...]
-                    //
-                    if (pendingUp)
-                    {
-                        // Liberar el click anterior
-                        Win32.SendLeftUp();
-                        pendingUp = false;
-                        // Micro-gap para que el juego procese el UP antes del siguiente DOWN
-                        Thread.SpinWait(200); // ~0.06ms, imperceptible para el usuario
-                    }
-
-                    // Enviar el DOWN de este click
-                    Win32.SendLeftDown();
-                    pendingUp = true;
+                    // ── IN-GAME: Modo PostMessage (Aim Assist Compatible) ──
+                    // Enviamos los clicks directamente a la ventana de Minecraft.
+                    // Esto hace un bypass completo de la cola global de Windows.
+                    // Resultado: XClient sigue leyendo el mouse FÍSICO del usuario
+                    // (con GetAsyncKeyState) para el aim assist, mientras que Minecraft
+                    // recibe los clicks rápidos del autoclicker sin enterarse de la diferencia.
+                    
+                    Win32.PostLeftDown(foregroundWnd);
                     PlayClickSound();
 
                     // W-Tap
@@ -307,8 +299,14 @@ namespace lospoderosos_lite.Modules
                             });
                         }
                     }
-                    // NO enviamos UP aqui. El LMB queda DOWN durante toda la espera.
-                    // El UP se enviara al inicio del PROXIMO ciclo (arriba, antes del siguiente DOWN).
+
+                    // Hold time rapido para que Minecraft registre el click
+                    int holdTime = _rng.Next(2, 5);
+                    long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
+                    long startTicks = Stopwatch.GetTimestamp();
+                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
+
+                    Win32.PostLeftUp(foregroundWnd);
                 }
 
                 // Espera de precision hasta el proximo tick
@@ -323,31 +321,26 @@ namespace lospoderosos_lite.Modules
                 }
             }
 
-            // Cleanup: si salimos del loop con LMB abajo, liberarlo
-            if (pendingUp) Win32.SendLeftUp();
+            if (globalHoldActive) Win32.SendLeftUpNative();
         }
 
-        private void PerformClick(bool inInventory, bool refillMode = false)
+        private void PerformClick(bool inInventory, bool refillMode, IntPtr foregroundWnd)
         {
             if (refillMode && inInventory)
             {
-                // Shift-click for refill: hold shift, click, with very fast hold timing
-                Win32.SendLeftDown();
-                // Use Stopwatch for precise short delay without risking Thread.Sleep inaccuracy
+                Win32.PostLeftDown(foregroundWnd);
                 long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
                 long refStart = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) Thread.Sleep(0);
-                Win32.SendLeftUp();
+                Win32.PostLeftUp(foregroundWnd);
                 return;
             }
 
-            Win32.SendLeftDown();
+            Win32.PostLeftDown(foregroundWnd);
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(1, 3); // Faster hits optimization
-                
-                // Spin wait replaced with Sleep(0) to prevent CPU starvation and sensitivity bug during clicks
+                int holdTime = _rng.Next(1, 3);
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
@@ -355,36 +348,27 @@ namespace lospoderosos_lite.Modules
                     Thread.Sleep(0);
                 }
                 
-                Win32.SendLeftUp();
+                Win32.PostLeftUp(foregroundWnd);
 
-                // ── Aim-Assist Cooperation Window ──
-                // Cede el quantum de CPU tras soltar el click para que XClient pueda
-                // procesar su rotacion antes del proximo click-down.
-                // mouse_event(dx=0, dy=0) no toca la posicion del cursor, por lo que
-                // los clicks son compatibles con cualquier aim assist por diseno.
-                Thread.Sleep(0);
-
-                // W-Tap Logic (Reset sprint to deal more knockback and take less)
+                // W-Tap Logic
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                 {
-                    if (_rng.NextDouble() < 0.45) // ~45% of hits will trigger W-Tap
+                    if (_rng.NextDouble() < 0.45)
                     {
-                        Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0); // Release W
-                        // Async W-Tap to prevent blocking the clicker thread at high CPS
+                        Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0);
                         ThreadPool.QueueUserWorkItem(_ => {
                             Thread.Sleep(_rng.Next(10, 30));
-                            Win32.keybd_event(0x57, 0, 0, 0); // Press W again
+                            Win32.keybd_event(0x57, 0, 0, 0);
                         });
                     }
                 }
             }
             else
             {
-                // If in inventory, very quick release
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
-                Win32.SendLeftUp();
+                Win32.PostLeftUp(foregroundWnd);
             }
         }
 
