@@ -1,1 +1,1 @@
-2.2.5|https://cdn.discordapp.com/attachments/1437199692931793110/1515893290803789937/lospoderosos.exe?ex=6a30a924&is=6a2f57a4&hm=4c0e0d86b6a8883e6fc0cf50d257ed2d653f6bfdc3b685c06420f4e3f7bee6f4&
+2.2.5||https://github.com/joacodemon/lospoderosos/releases/download/lospoderosos/lospoderosos.exe
