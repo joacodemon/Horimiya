@@ -95,7 +95,7 @@ namespace lospoderosos_lite.Utils
         [DllImport("user32.dll")]
         public static extern bool ScreenToClient(IntPtr hWnd, ref Point lpPoint);
 
-        public static void PostLeftDown(IntPtr hwnd)
+        public static IntPtr PostLeftDown(IntPtr hwnd)
         {
             Point p;
             if (GetCursorPos(out p))
@@ -103,18 +103,14 @@ namespace lospoderosos_lite.Utils
                 ScreenToClient(hwnd, ref p);
                 IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
                 PostMessage(hwnd, 0x0201, (IntPtr)1, lParam); // WM_LBUTTONDOWN, MK_LBUTTON
+                return lParam;
             }
+            return IntPtr.Zero;
         }
 
-        public static void PostLeftUp(IntPtr hwnd)
+        public static void PostLeftUp(IntPtr hwnd, IntPtr lParam)
         {
-            Point p;
-            if (GetCursorPos(out p))
-            {
-                ScreenToClient(hwnd, ref p);
-                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
-                PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
-            }
+            PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
         }
 
         public static void SendRightDown()
