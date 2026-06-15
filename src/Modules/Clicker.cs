@@ -99,24 +99,23 @@ namespace lospoderosos_lite.Modules
             var sw = new Stopwatch();
             sw.Start();
             long nextClickTick = sw.ElapsedTicks;
-            // Reset debug counters
-            // Jitter state
             double currentJitterCps = _cfg.AverageCps;
             double jitterMomentum = 0;
 
-            // Detect CheatBreaker and disable clicker if running
-            // if (_cfg.DetectCheatBreaker && System.Diagnostics.Process.GetProcessesByName("CheatBreaker").Length > 0)
-            // {
-            //     _running = false;
-            //     return; // exit ClickLoop gracefully
-            // }
+            // ── Aim-Assist compatible state ────────────────────────────────────
+            // En modo in-game, el LMB se manda DOWN y queda asi durante toda la
+            // espera entre clicks. El UP se envia SOLO justo antes del siguiente DOWN.
+            // De esta forma XClient ve VK_LBUTTON como "held" ~99.9% del tiempo
+            // y el aim assist funciona sin interrupciones.
+            bool pendingUp = false; // true = hay un DOWN enviado que todavia no tiene UP
+
             while (_running)
             {
-                // If Clicking is OFF, sleep longer to save CPU
+                // Si Clicking esta OFF, liberar LMB si es necesario y dormir
                 if (!Clicking)
                 {
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     Thread.Sleep(15);
-                    // Reset caches when not clicking so they refresh on next activation
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
                     _wasBbActive = false;
@@ -124,77 +123,65 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // ── Mode check ──
-                // Mode 0 = Hold:   only click while LMB is physically held
-                // Mode 1 = Toggle: click continuously once toggled on (Clicking flag handles this)
-                // Mode 2 = Always: click continuously regardless of LMB state
                 bool shouldClick;
                 if (_cfg.Mode == 0) // Hold
-                {
                     shouldClick = Win32.IsLeftDown;
-                }
-                else // Toggle (1) or Always (2): just click freely
-                {
+                else
                     shouldClick = true;
-                }
 
                 if (!shouldClick)
                 {
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     Thread.Sleep(5);
                     nextClickTick = sw.ElapsedTicks;
                     continue;
                 }
 
-                // ── RMB-Lock: pause left clicking while RMB is held ──
+                // ── RMB-Lock ──
                 if (_cfg.RmbLock && Win32.IsRightDown)
                 {
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     Thread.Sleep(5);
                     continue;
                 }
 
-                // ── Focus check (cached) — only enforced when OnlyInGame is enabled ──
+                // ── Focus check (cached) ──
                 IntPtr foregroundWnd = Win32.GetForegroundWindow();
                 if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
                 {
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     Thread.Sleep(10);
                     continue;
                 }
 
-                // ── Menu / Inventory restriction (cached cursor check) ──
-                // Skipped entirely when WorkInMenus is enabled
+                // ── Menu / Inventory restriction ──
                 bool cursorShown = CachedIsCursorVisible();
                 if (cursorShown && !_cfg.WorkInMenus)
                 {
                     if (!CachedIsInventoryLikeScreen(foregroundWnd))
                     {
+                        if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                         Thread.Sleep(10);
                         continue;
                     }
                 }
 
-                // Integrated Refill check: anytime cursor is shown and SHIFT is held
+                // Refill check
                 bool isRefilling = cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
-
-
 
                 // ── Randomization Mode ──
                 double targetCps = _cfg.AverageCps;
                 bool isButterfly = false;
-
                 double delayMs;
 
-                // ── REFILL OVERRIDE: siempre 20 CPS exactos al shiftear, sin importar nada ──
                 if (isRefilling)
                 {
-                    delayMs = 1000.0 / 20.0; // 50ms = 20 CPS, fijo, sin randomización
+                    delayMs = 1000.0 / 20.0;
                 }
-                else
-
-                if (_cfg.RandMode == 3) // ── Manual Custom Randomization ──
+                else if (_cfg.RandMode == 3)
                 {
                     double sumWeights = 0;
                     for (int i = 0; i < 25; i++) sumWeights += _cfg.CustomCpsWeights[i];
-
-                    // Re-roll target from distribution every 3-8 clicks (creates human "streaks")
                     if (sumWeights > 0 && _customStreakLeft <= 0)
                     {
                         double roll = _rng.NextDouble() * sumWeights;
@@ -204,142 +191,140 @@ namespace lospoderosos_lite.Modules
                             acc += _cfg.CustomCpsWeights[i];
                             if (roll <= acc) { _customTargetCps = i + 1; break; }
                         }
-                        _customStreakLeft = _rng.Next(3, 9); // stay at this speed 3-8 clicks
+                        _customStreakLeft = _rng.Next(3, 9);
                     }
                     _customStreakLeft--;
-
-                    // Spring: smoothly drift currentCps toward the newly chosen target
-                    // (35% pull per click → reaches target in ~5 clicks, looks natural)
                     _customCurrentCps += (_customTargetCps - _customCurrentCps) * 0.35;
-
-                    // Sub-integer Gaussian noise so timing is never a perfectly round number
                     double customNoise = NextGaussian() * 0.20;
                     double finalCustomCps = Math.Max(1.0, _customCurrentCps + customNoise);
-
                     delayMs = 1000.0 / finalCustomCps;
-                    // Small timing jitter ±1.5ms to break synthetic regularity
                     delayMs += (_rng.NextDouble() * 3.0 - 1.5);
                 }
-                else if (_cfg.RandMode == 2) // ── NoDelay: stable, predictable distribution ──
+                else if (_cfg.RandMode == 2)
                 {
-                    // N   = floor(target)  → most common (60%)
-                    // N+1 = floor+1        → regular     (30%)
-                    // N+2 = floor+2        → occasional  (7%)
-                    // N-1 = floor-1        → rare drop   (3%)
-                    // Example at 15 CPS:  mostly 15, regular 16, rare 17, very rare 14
-                    // Example at 20 CPS:  mostly 20, regular 21, rare 22, very rare 19
                     double fl = Math.Floor(targetCps);
                     double roll = _rng.NextDouble();
                     double actualCps;
-                    if      (roll < 0.60) actualCps = fl;                      // 60% → N
-                    else if (roll < 0.90) actualCps = fl + 1.0;                // 30% → N+1
-                    else if (roll < 0.97) actualCps = fl + 2.0;                // 7%  → N+2
-                    else                  actualCps = Math.Max(1.0, fl - 1.0); // 3%  → N-1
+                    if      (roll < 0.60) actualCps = fl;
+                    else if (roll < 0.90) actualCps = fl + 1.0;
+                    else if (roll < 0.97) actualCps = fl + 2.0;
+                    else                  actualCps = Math.Max(1.0, fl - 1.0);
                     delayMs = 1000.0 / actualCps;
                 }
-                else if (_cfg.RandMode == 1) // ── Butterfly: double-click, stable ──
+                else if (_cfg.RandMode == 1)
                 {
-                    // Butterfly sends 2 clicks per cycle.
-                    // To achieve N CPS with 2 clicks/cycle → cycle must last 2000/N ms.
-                    // e.g. 15 CPS → 133ms cycle → 2 clicks in 133ms = 15 CPS ✓
-                    double drop = _rng.NextDouble() * 0.5; // tiny variation ±0.5 CPS
+                    double drop = _rng.NextDouble() * 0.5;
                     double butterflyCps = Math.Max(1.0, targetCps - drop);
-                    delayMs = 2000.0 / butterflyCps; // ← KEY FIX: 2000 not 1000
-                    delayMs += (_rng.NextDouble() * 2.0 - 1.0); // ±1ms noise
+                    delayMs = 2000.0 / butterflyCps;
+                    delayMs += (_rng.NextDouble() * 2.0 - 1.0);
                     isButterfly = true;
                 }
-                else // ── Jitter (Mode 0): legit human-like, tight and smooth ──
+                else
                 {
-                    // Gentle momentum random walk — small drift so CPS stays close to target
-                    double drift = NextGaussian() * 0.25;              // was 0.4, now tighter
-                    jitterMomentum = (jitterMomentum * 0.70) + drift;  // decays faster
-
+                    double drift = NextGaussian() * 0.25;
+                    jitterMomentum = (jitterMomentum * 0.70) + drift;
                     currentJitterCps += jitterMomentum;
-
-                    // Strong spring: 30% pull-back per click keeps it close to target
                     double diff = targetCps - currentJitterCps;
-                    currentJitterCps += diff * 0.30;                   // was 0.20
-
+                    currentJitterCps += diff * 0.30;
                     double finalCps = currentJitterCps;
-
-                    // Fatigue drop: 2% chance, less severe (70–90% speed)
                     if (_rng.NextDouble() < 0.02)
                     {
                         finalCps *= (0.70 + _rng.NextDouble() * 0.20);
                         jitterMomentum -= 0.8;
                     }
-                    // Spasm: 1.5% chance, mild burst (105–120% speed)
                     else if (_rng.NextDouble() < 0.015)
                     {
                         finalCps *= (1.05 + _rng.NextDouble() * 0.15);
                         jitterMomentum += 0.8;
                     }
-
-                    // Tight clamp: ±2 CPS around target so it never feels robotic but stays close
                     finalCps = Math.Max(targetCps - 2.0, Math.Min(targetCps + 2.0, finalCps));
                     finalCps = Math.Max(1.0, finalCps);
-
                     delayMs = 1000.0 / finalCps;
-                    // Low-frequency timing noise ±2ms (was ±6ms)
                     delayMs += (_rng.NextDouble() * 4.0 - 2.0);
                 }
 
                 delayMs = Math.Max(3.0, delayMs);
-
                 long delayTicks = (long)(delayMs * Stopwatch.Frequency / 1000.0);
-
-                // Avanzar el tick objetivo
                 nextClickTick += delayTicks;
                 long currentTick = sw.ElapsedTicks;
-                if (nextClickTick < currentTick)
-                {
-                    // Si nos atrasamos mucho, reset para evitar rafaga de clicks
-                    nextClickTick = currentTick;
-                }
+                if (nextClickTick < currentTick) nextClickTick = currentTick;
 
                 // ── Ejecutar el click ──
                 if (isButterfly)
                 {
-                    // Butterfly: two rapid clicks with a tiny gap
-                    // microGap is deducted from delayMs so the total cycle = delayMs
-                    int microGap = _rng.Next(4, 13); // 4-12ms gap between the two sub-clicks
+                    // Butterfly: doble-click tradicional (UP+DOWN rapido)
+                    // No aplica el modo hold-through porque la naturaleza del butterfly
+                    // requiere ciclos rapidos de UP/DOWN.
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
+                    int microGap = _rng.Next(4, 13);
                     PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
                     Thread.Sleep(microGap);
                     PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
-                    // Compensate: reduce the upcoming wait by the gap we already spent
                     nextClickTick -= (long)(microGap * Stopwatch.Frequency / 1000.0);
                 }
-                else
+                else if (cursorShown || isRefilling)
                 {
+                    // Inventario / Refill: click tradicional rapido
+                    if (pendingUp) { Win32.SendLeftUp(); pendingUp = false; }
                     PerformClick(cursorShown, isRefilling);
                     PlayClickSound();
                 }
+                else
+                {
+                    // ── IN-GAME: Modo Hold-Through (Aim Assist Compatible) ──
+                    // El LMB baja al inicio del click y NO sube hasta el proximo ciclo.
+                    // VK_LBUTTON permanece DOWN durante toda la espera entre clicks.
+                    // XClient ve LMB como "held" constantemente -> aim assist siempre activo.
+                    //
+                    // Timing: [UP-from-prev (tiny gap) | DOWN | wait cycleTime | UP-from-prev | DOWN ...]
+                    //
+                    if (pendingUp)
+                    {
+                        // Liberar el click anterior
+                        Win32.SendLeftUp();
+                        pendingUp = false;
+                        // Micro-gap para que el juego procese el UP antes del siguiente DOWN
+                        Thread.SpinWait(200); // ~0.06ms, imperceptible para el usuario
+                    }
 
-                // Maximum precision sleep (Hybrid Sleep/Yield for 0 latency)
+                    // Enviar el DOWN de este click
+                    Win32.SendLeftDown();
+                    pendingUp = true;
+                    PlayClickSound();
+
+                    // W-Tap
+                    if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                    {
+                        if (_rng.NextDouble() < 0.45)
+                        {
+                            Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0);
+                            ThreadPool.QueueUserWorkItem(_ =>
+                            {
+                                Thread.Sleep(_rng.Next(10, 30));
+                                Win32.keybd_event(0x57, 0, 0, 0);
+                            });
+                        }
+                    }
+                    // NO enviamos UP aqui. El LMB queda DOWN durante toda la espera.
+                    // El UP se enviara al inicio del PROXIMO ciclo (arriba, antes del siguiente DOWN).
+                }
+
+                // Espera de precision hasta el proximo tick
                 while (sw.ElapsedTicks < nextClickTick)
                 {
                     if (!Clicking || !_running) break;
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
-                    
-                    if (leftMs > 2.0) // Only sleep if we have plenty of time
-                    {
-                        Thread.Sleep(1);
-                    }
-                    else if (leftMs > 0.1)
-                    {
-                        // Yield to prevent CPU starvation, which fixes the "sensitivity goes up" bug at high CPS
-                        Thread.Sleep(0);
-                    }
-                    else
-                    {
-                        // Active spin for only the last 0.1ms guarantees precision without starving the CPU
-                        Thread.SpinWait(10);
-                    }
+                    if (leftMs > 2.0)       Thread.Sleep(1);
+                    else if (leftMs > 0.1)  Thread.Sleep(0);
+                    else                    Thread.SpinWait(10);
                 }
             }
+
+            // Cleanup: si salimos del loop con LMB abajo, liberarlo
+            if (pendingUp) Win32.SendLeftUp();
         }
 
         private void PerformClick(bool inInventory, bool refillMode = false)
