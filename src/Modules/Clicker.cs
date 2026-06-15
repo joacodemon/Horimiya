@@ -300,8 +300,8 @@ namespace lospoderosos_lite.Modules
                         }
                     }
 
-                    // Hold time rapido para que Minecraft registre el click
-                    int holdTime = _rng.Next(2, 5);
+                    // Hold time suficiente para que el message pump de Minecraft procese el click
+                    int holdTime = _rng.Next(12, 18);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
@@ -340,7 +340,7 @@ namespace lospoderosos_lite.Modules
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(1, 3);
+                int holdTime = _rng.Next(12, 18);
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
