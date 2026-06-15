@@ -326,9 +326,15 @@ public class ImGuiForm : Form
         
         bool wim = _cfg.WorkInMenus;
         if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
-        
 
-
+        bool aac = _cfg.AimAssistCompat;
+        if (ImGui.Checkbox("Aim Assist Compat (XClient)", ref aac))
+        {
+            _cfg.AimAssistCompat = aac;
+            _cfg.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Pausa el click durante micro-rotaciones del aim assist\npara evitar que se pisen los inputs. Activalo si usas XClient.");
 
 
         ImGui.NextColumn();

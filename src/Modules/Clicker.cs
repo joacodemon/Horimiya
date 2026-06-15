@@ -151,6 +151,17 @@ namespace lospoderosos_lite.Modules
                     continue;
                 }
 
+                // ── Aim-Assist Compat: esperar si XClient está rotando el mouse ──
+                // Cuando el aim assist inyecta un WM_MOUSEMOVE, damos una micro-ventana
+                // para que la rotación llegue al juego antes del click-down.
+                // Esto evita que el click "pise" la rotación en la cola de input.
+                if (_cfg.AimAssistCompat && Win32.IsAimAssistMoving())
+                {
+                    Thread.Sleep(1);
+                    nextClickTick = sw.ElapsedTicks; // reset para no acumular deuda de clicks
+                    continue;
+                }
+
                 // ── Focus check (cached) — only enforced when OnlyInGame is enabled ──
                 IntPtr foregroundWnd = Win32.GetForegroundWindow();
                 if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
@@ -373,11 +384,14 @@ namespace lospoderosos_lite.Modules
                 Win32.SendLeftUp();
 
                 // ── Aim-Assist Cooperation Window ──
-                // After releasing the click, yield briefly so external aim assists
-                // can inject their mouse-move corrections into the input queue
-                // before the next click-down. Without this, rapid click-down events
-                // can "eat" aim-assist movements because SendInput batches are atomic.
-                Thread.Sleep(0); // Yield CPU slice to let aim-assist process
+                // Después de soltar el click, cedemos la CPU para que el aim assist
+                // de XClient pueda procesar su rotación antes del próximo click-down.
+                // Con AimAssistCompat activo usamos un yield más generoso (Thread.Sleep(0)
+                // cede el quantum completo, ~1ms, sin bloquear el thread).
+                if (_cfg.AimAssistCompat)
+                    Thread.Sleep(0); // cede el quantum, aim assist entra a la cola
+                else
+                    Thread.SpinWait(5); // spin mínimo si compat está desactivado
 
                 // W-Tap Logic (Reset sprint to deal more knockback and take less)
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
