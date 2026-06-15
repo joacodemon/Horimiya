@@ -69,9 +69,9 @@ namespace lospoderosos_lite.Config
         {
             Instance = this;
             // Default built-in presets
-            Presets.Add(new PresetConfig { Name = "hcrival.org",    Server = "hcrival.org",    Cps = 15.5, RandMode = 2, IsBuiltIn = true });
+            Presets.Add(new PresetConfig { Name = "cavepvp.com",    Server = "cavepvp.com",    Cps = 16.7, RandMode = 2, IsBuiltIn = true });
             Presets.Add(new PresetConfig { Name = "elevatemc.com",  Server = "elevatemc.com",  Cps = 16.7, RandMode = 2, IsBuiltIn = true });
-            Presets.Add(new PresetConfig { Name = "minemen.club",   Server = "minemen.club",   Cps = 19.5, RandMode = 2, IsBuiltIn = true });
+            Presets.Add(new PresetConfig { Name = "minemen.club",   Server = "minemen.club",   Cps = 20.0, RandMode = 2, IsBuiltIn = true });
         }
 
         public void Save()
