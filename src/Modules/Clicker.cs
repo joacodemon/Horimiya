@@ -301,14 +301,21 @@ namespace lospoderosos_lite.Modules
                     }
 
                     // Hold time corto para PostMessage: el mensaje se encola directo en Minecraft,
-                    // no necesita hold largo. 3-6ms es suficiente para que el message pump
+                    // no necesita hold largo. 2-4ms es suficiente para que el message pump
                     // procese DOWN antes de recibir UP, sin robar tiempo del intervalo de CPS.
-                    int holdTime = _rng.Next(3, 6);
+                    // IMPORTANTE: Usamos un busy-loop con Stopwatch en vez de SpinWait.
+                    // SpinWait(20) se inflaba de 3-6ms a 10-15ms+ cuando XClient aim assist
+                    // estaba activo (contención de CPU), causando que los CPS bajaran a 12-17.
+                    int holdTime = _rng.Next(2, 5);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
-                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.SpinWait(20);
+                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { }
 
-                    Win32.PostLeftUp(foregroundWnd, clickLParam);
+                    // Recalcular posición del cursor para el UP.
+                    // Si XClient aim assist movió el cursor durante el hold,
+                    // usar la posición vieja del DOWN causaba que Minecraft
+                    // descartara el click (posición UP != posición DOWN).
+                    Win32.PostLeftUpFresh(foregroundWnd);
                 }
 
                 // Espera de precision hasta el proximo tick

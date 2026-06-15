@@ -113,6 +113,28 @@ namespace lospoderosos_lite.Utils
             PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
         }
 
+        /// <summary>
+        /// Sends WM_LBUTTONUP with a FRESH cursor position instead of reusing the stale
+        /// position from PostLeftDown. This is critical when XClient aim assist is active:
+        /// aim assist moves the cursor during the hold time between DOWN and UP.
+        /// If UP arrives with the old position, Minecraft may discard the click.
+        /// </summary>
+        public static void PostLeftUpFresh(IntPtr hwnd)
+        {
+            Point p;
+            if (GetCursorPos(out p))
+            {
+                ScreenToClient(hwnd, ref p);
+                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                PostMessage(hwnd, 0x0202, (IntPtr)0, lParam);
+            }
+            else
+            {
+                // Fallback: posición 0,0 — mejor que no enviar nada
+                PostMessage(hwnd, 0x0202, (IntPtr)0, IntPtr.Zero);
+            }
+        }
+
         public static void SendRightDown()
         {
             mouse_event(0x0008, 0, 0, 0, 0x1337);
