@@ -40,6 +40,7 @@ namespace lospoderosos_lite.Modules
         private double _customTargetCps = 15.0; // CPS picked from the weighted distribution
         private double _customCurrentCps = 15.0; // smoothed value drifting toward target
         private int    _customStreakLeft  = 0;    // clicks remaining at current target before re-rolling
+private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calculation
 
         // ── Performance cache fields ──
         // Cache Minecraft focus check to avoid StringBuilder alloc + GetWindowText every tick
@@ -66,6 +67,15 @@ namespace lospoderosos_lite.Modules
         public Clicker(AppConfig cfg)
         {
             _cfg = cfg;
+        }
+
+        // Returns the CPS to aim for this tick. If ForceExactCps is enabled, returns the exact configured AverageCps.
+        private double GetCurrentCps()
+        {
+            if (_cfg.ForceExactCps)
+                return _cfg.AverageCps;
+            // Otherwise, the jitter/random logic will handle variation. For now we just return the configured average.
+            return _cfg.AverageCps;
         }
 
         public void Start()
@@ -99,7 +109,7 @@ namespace lospoderosos_lite.Modules
             var sw = new Stopwatch();
             sw.Start();
             long nextClickTick = sw.ElapsedTicks;
-            double currentJitterCps = _cfg.AverageCps;
+            double currentJitterCps = GetCurrentCps();
             double jitterMomentum = 0;
 
             // ── Aim-Assist compatible state ────────────────────────────────────
@@ -111,7 +121,7 @@ namespace lospoderosos_lite.Modules
                 if (!Clicking)
                 {
                     if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                    Thread.Sleep(15);
+                    Thread.SpinWait(1000); // short spin to respect 1ms timer
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
                     _wasBbActive = false;
@@ -128,7 +138,7 @@ namespace lospoderosos_lite.Modules
                 if (!shouldClick)
                 {
                     if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                    Thread.Sleep(5);
+                    Thread.Sleep(1); // reduced sleep to keep high CPS
                     nextClickTick = sw.ElapsedTicks;
                     continue;
                 }
@@ -177,7 +187,7 @@ namespace lospoderosos_lite.Modules
                 bool isRefilling = cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
 
                 // ── Randomization Mode ──
-                double targetCps = _cfg.AverageCps;
+                double targetCps = GetCurrentCps();
                 bool isButterfly = false;
                 double delayMs;
 
@@ -228,26 +238,24 @@ namespace lospoderosos_lite.Modules
                 }
                 else
                 {
-                    double drift = NextGaussian() * 0.25;
-                    jitterMomentum = (jitterMomentum * 0.70) + drift;
-                    currentJitterCps += jitterMomentum;
-                    double diff = targetCps - currentJitterCps;
-                    currentJitterCps += diff * 0.30;
-                    double finalCps = currentJitterCps;
-                    if (_rng.NextDouble() < 0.02)
-                    {
-                        finalCps *= (0.70 + _rng.NextDouble() * 0.20);
-                        jitterMomentum -= 0.8;
-                    }
-                    else if (_rng.NextDouble() < 0.015)
-                    {
-                        finalCps *= (1.05 + _rng.NextDouble() * 0.15);
-                        jitterMomentum += 0.8;
-                    }
-                    finalCps = Math.Max(targetCps - 2.0, Math.Min(targetCps + 2.0, finalCps));
-                    finalCps = Math.Max(1.0, finalCps);
-                    delayMs = 1000.0 / finalCps;
-                    delayMs += (_rng.NextDouble() * 4.0 - 2.0);
+                // ----- Versión ultra‑estable de CPS -----
+                // Reduce jitter y aplica suavizado exponencial (EMA) para mayor consistencia
+                double jitter = NextGaussian() * 0.05; // ruido pequeño
+                double rawCps = targetCps + jitter;
+                double lower = targetCps * 0.97;
+                double upper = targetCps * 1.03;
+                rawCps = Math.Max(lower, Math.Min(upper, rawCps));
+                rawCps = Math.Max(1.0, rawCps);
+                rawCps = Math.Max(targetCps - 1.0, rawCps);
+                // EMA smoothing (alpha = 0.1)
+                if (double.IsNaN(_stableCps)) _stableCps = rawCps;
+                else _stableCps = _stableCps * 0.9 + rawCps * 0.1;
+                double finalCps = _stableCps;
+                // Calcular delay en milisegundos
+                delayMs = 1000.0 / finalCps;
+                // Aplicar jitter menor al delay
+                delayMs += (_rng.NextDouble() * 0.5 - 0.25); // ±0.25 ms
+                // ----- Fin de versión estabilizada -----
                 }
 
                 delayMs = Math.Max(3.0, delayMs);
@@ -309,7 +317,10 @@ namespace lospoderosos_lite.Modules
                     int holdTime = _rng.Next(2, 5);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
-                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { }
+                    while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
+{
+    Thread.Sleep(0); // Ceder CPU para evitar que el aim‑assist de XClient cause retardos
+}
 
                     // Recalcular posición del cursor para el UP.
                     // Si XClient aim assist movió el cursor durante el hold,

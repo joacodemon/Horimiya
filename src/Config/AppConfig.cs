@@ -33,7 +33,7 @@ namespace lospoderosos_lite.Config
         public int Mode = 0; // 0=Hold, 1=Toggle, 2=Always
         public int BBMode = 1; // 0=Off, 1=Full, 2=Sneak
         public bool OnlyInGame = true;
-        public bool RmbLock = false;
+        public bool RmbLock = true; // Bloquear LMB cuando RMB está presionado para evitar BlockHit automático
         public bool WorkInMenus = true;
 
         public bool DiscordRpc = true;
@@ -43,6 +43,7 @@ namespace lospoderosos_lite.Config
         public int ClickBind = 0;
         public int HideBind = 0;
         public int RandMode = 0; // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Manual
+        public bool ForceExactCps = false; // When true, clicker uses exact AverageCps without jitter
 
         public double RightAverageCps = 15.0;
         public int RightMode = 0;

@@ -136,7 +136,7 @@ public class ImGuiForm : Form
 
         // Enable VSync: this blocks SwapBuffers until the monitor refreshes (e.g. 60 or 144 Hz).
         // This gives perfectly smooth FPS without stuttering, and prevents 100% GPU usage.
-        _glControl.VSync = true;
+        _glControl.VSync = false; // Desactivar VSync para evitar limitar a 30 FPS
         
         Application.Idle += RenderLoop;
         
