@@ -39,6 +39,16 @@ namespace lospoderosos_lite.Modules
 
         public volatile bool Clicking = false;
 
+        // ── Live Stats ──
+        public double StatLiveCps = 0;
+        public double StatAvgCps = 0;
+        public double StatInterval = 0;
+        public double StatJitter = 0;
+        public double StatLast = 0;
+        public int StatLate = 0;
+        public double StatWorstLate = 0;
+        public int StatSamples = 0;
+        private long _lastClickFinishTick = 0;
         public RightClicker(AppConfig cfg)
         {
             _cfg = cfg;
@@ -207,6 +217,17 @@ namespace lospoderosos_lite.Modules
                     delayMs += (_rng.NextDouble() * 12.0 - 6.0);
                 }
 
+                // ── Ping / Latency Compensation ──
+                // When ping > 0, we pre-shift click timing to account for network delay:
+                double pingMs = _cfg.PingMs;
+                if (pingMs > 0)
+                {
+                    double oneWayMs = pingMs * 0.5;
+                    double delayReduction = oneWayMs * 0.15;
+                    delayMs -= delayReduction;
+                    delayMs += (_rng.NextDouble() * pingMs * 0.02 - pingMs * 0.01);
+                }
+
                 delayMs = Math.Max(3.0, delayMs);
 
                 long delayTicks = (long)(delayMs * Stopwatch.Frequency / 1000.0);
@@ -243,6 +264,27 @@ namespace lospoderosos_lite.Modules
                     if (leftMs > 2.5) Thread.Sleep(1);
                     else Thread.SpinWait(10);
                 }
+
+                // Update Live Stats
+                long nowTicks = sw.ElapsedTicks;
+                double actualElapsedMs = (nowTicks - _lastClickFinishTick) * 1000.0 / Stopwatch.Frequency;
+                if (_lastClickFinishTick > 0 && actualElapsedMs > 0)
+                {
+                    StatInterval = delayMs;
+                    StatLast = actualElapsedMs;
+                    StatLiveCps = 1000.0 / actualElapsedMs;
+                    StatJitter = Math.Abs(actualElapsedMs - delayMs);
+                    
+                    if (actualElapsedMs > delayMs + 1.5)
+                    {
+                        StatLate++;
+                        double lateAmt = actualElapsedMs - delayMs;
+                        if (lateAmt > StatWorstLate) StatWorstLate = lateAmt;
+                    }
+                    StatSamples++;
+                    StatAvgCps = (StatAvgCps * (StatSamples - 1) + StatLiveCps) / StatSamples;
+                }
+                _lastClickFinishTick = nowTicks;
             }
         }
 
@@ -255,11 +297,14 @@ namespace lospoderosos_lite.Modules
                 int holdTime = _rng.Next(1, 4);
                 if (_rng.NextDouble() < 0.08) holdTime += _rng.Next(2, 6); 
                 
+                double pingMs = _cfg.PingMs;
+                if (pingMs > 0)
+                    holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05);
+                
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {
-                    Thread.SpinWait(10);
                 }
                 
                 Win32.SendRightUp();
@@ -268,7 +313,7 @@ namespace lospoderosos_lite.Modules
             {
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.SpinWait(10);
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { }
                 Win32.SendRightUp();
             }
         }

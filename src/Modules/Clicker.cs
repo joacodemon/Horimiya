@@ -64,6 +64,16 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
 
         public volatile bool Clicking = false;
 
+        // ── Live Stats ──
+        public double StatLiveCps = 0;
+        public double StatAvgCps = 0;
+        public double StatInterval = 0;
+        public double StatJitter = 0;
+        public double StatLast = 0;
+        public int StatLate = 0;
+        public double StatWorstLate = 0;
+        public int StatSamples = 0;
+        private long _lastClickFinishTick = 0;
         public Clicker(AppConfig cfg)
         {
             _cfg = cfg;
@@ -121,7 +131,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 if (!Clicking)
                 {
                     if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                    Thread.SpinWait(1000); // short spin to respect 1ms timer
+                    Thread.Sleep(15);
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
                     _wasBbActive = false;
@@ -258,6 +268,24 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 // ----- Fin de versión estabilizada -----
                 }
 
+                // ── Ping / Latency Compensation ──
+                // When ping > 0, we pre-shift click timing to account for network delay:
+                // 1. Reduce inter-click delay slightly so clicks arrive at the server faster
+                // 2. Extend hold time so the server sees the click for a longer window
+                // This compensates for the round-trip latency, making hits register better
+                double pingMs = _cfg.PingMs;
+                if (pingMs > 0)
+                {
+                    // Reduce delay by a fraction of the ping (one-way latency = ping/2)
+                    // We subtract ~15% of one-way latency from the click interval
+                    // This clusters clicks slightly tighter, compensating for network jitter
+                    double oneWayMs = pingMs * 0.5;
+                    double delayReduction = oneWayMs * 0.15;
+                    delayMs -= delayReduction;
+                    // Add slight randomness scaled to ping to simulate natural network jitter
+                    delayMs += (_rng.NextDouble() * pingMs * 0.02 - pingMs * 0.01);
+                }
+
                 delayMs = Math.Max(3.0, delayMs);
                 long delayTicks = (long)(delayMs * Stopwatch.Frequency / 1000.0);
                 nextClickTick += delayTicks;
@@ -315,11 +343,16 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     // SpinWait(20) se inflaba de 3-6ms a 10-15ms+ cuando XClient aim assist
                     // estaba activo (contención de CPU), causando que los CPS bajaran a 12-17.
                     int holdTime = _rng.Next(2, 5);
+                    // Ping compensation: extend hold time so the server has a wider
+                    // window to register the click despite network delay
+                    if (pingMs > 0)
+                        holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05); // +~5% of one-way latency
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
 {
-    Thread.Sleep(0); // Ceder CPU para evitar que el aim‑assist de XClient cause retardos
+    // Busy-loop puro: no cedemos CPU (ni Sleep ni SpinWait) para evitar que 
+    // el thread del aim-assist de XClient nos quite el timeslice y cause retardos.
 }
 
                     // Recalcular posición del cursor para el UP.
@@ -339,6 +372,27 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     else if (leftMs > 0.1)  Thread.Sleep(0);
                     else                    Thread.SpinWait(10);
                 }
+
+                // Update Live Stats
+                long nowTicks = sw.ElapsedTicks;
+                double actualElapsedMs = (nowTicks - _lastClickFinishTick) * 1000.0 / Stopwatch.Frequency;
+                if (_lastClickFinishTick > 0 && actualElapsedMs > 0)
+                {
+                    StatInterval = delayMs;
+                    StatLast = actualElapsedMs;
+                    StatLiveCps = 1000.0 / actualElapsedMs;
+                    StatJitter = Math.Abs(actualElapsedMs - delayMs);
+                    
+                    if (actualElapsedMs > delayMs + 1.5)
+                    {
+                        StatLate++;
+                        double lateAmt = actualElapsedMs - delayMs;
+                        if (lateAmt > StatWorstLate) StatWorstLate = lateAmt;
+                    }
+                    StatSamples++;
+                    StatAvgCps = (StatAvgCps * (StatSamples - 1) + StatLiveCps) / StatSamples;
+                }
+                _lastClickFinishTick = nowTicks;
             }
 
             if (globalHoldActive) Win32.SendLeftUpNative();
@@ -351,7 +405,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 IntPtr lP = Win32.PostLeftDown(foregroundWnd);
                 long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
                 long refStart = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) Thread.Sleep(0);
+                while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) { }
                 Win32.PostLeftUp(foregroundWnd, lP);
                 return;
             }
@@ -387,7 +441,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
             {
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) Thread.Sleep(0);
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { }
                 Win32.PostLeftUp(foregroundWnd, lParam);
             }
         }

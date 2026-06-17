@@ -63,6 +63,7 @@ namespace lospoderosos_lite.Config
         public bool StreamerMode = false;
         public int DestructBind = 0;
         public bool WTapEnabled = false;
+        public double PingMs = 0.0; // Latency compensation (0-200ms)
         public List<PresetConfig> Presets = new List<PresetConfig>();
 
         public AppConfig()
@@ -118,6 +119,7 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"StreamerMode\": {0},", StreamerMode ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DestructBind\": {0},", DestructBind));
             sb.AppendLine(string.Format("  \"WTapEnabled\": {0},", WTapEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"PingMs\": {0},", PingMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
 
             sb.Append("  \"CustomCpsWeights\": [");
             for (int i = 0; i < CustomCpsWeights.Length; i++)
@@ -176,6 +178,7 @@ namespace lospoderosos_lite.Config
             cfg.StreamerMode = GetBool(json, "StreamerMode", cfg.StreamerMode);
             cfg.DestructBind = GetInt(json, "DestructBind", cfg.DestructBind);
             cfg.WTapEnabled = GetBool(json, "WTapEnabled", cfg.WTapEnabled);
+            cfg.PingMs = Math.Max(0, Math.Min(200, GetDouble(json, "PingMs", cfg.PingMs)));
 
             double[] loadedWeights = GetDoubleArray(json, "CustomCpsWeights");
             if (loadedWeights != null && loadedWeights.Length == 25)

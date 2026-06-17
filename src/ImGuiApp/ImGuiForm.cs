@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -46,6 +47,8 @@ public class ImGuiForm : Form
     private float[] _customCpsWeightsFloat = new float[25];
 
     private Stopwatch _frameSw = Stopwatch.StartNew();
+    private volatile bool _disposed = false;
+    private const double TARGET_FRAME_TIME_MS = 1000.0 / 60.0; // 60 FPS cap
 
     // Cached sound list to avoid filesystem scanning every frame
     private List<string> _cachedSounds = null;
@@ -134,8 +137,7 @@ public class ImGuiForm : Form
         _texBg = TextureHelper.LoadTextureFromResource(bgRes);
         _texEaster = TextureHelper.LoadTextureFromResource(easterRes);
 
-        // Enable VSync: this blocks SwapBuffers until the monitor refreshes (e.g. 60 or 144 Hz).
-        // This gives perfectly smooth FPS without stuttering, and prevents 100% GPU usage.
+        // Use VSync to pace rendering naturally (prevents 100% CPU/GPU usage)
         _glControl.VSync = false; // Desactivar VSync para evitar limitar a 30 FPS
         
         Application.Idle += RenderLoop;
@@ -202,6 +204,13 @@ public class ImGuiForm : Form
     {
         while (IsAppIdle())
         {
+            // Cap at ~60 FPS (16.6ms per frame) to prevent 100% CPU/GPU usage
+            if (_frameSw.Elapsed.TotalMilliseconds < 16.0)
+            {
+                Thread.Sleep(1); // Give CPU time to the OS to avoid full system lag
+                continue;
+            }
+
             _glControl.MakeCurrent();
             GL.ClearColor(0.05f, 0.05f, 0.05f, 1.0f);
             GL.Clear(ClearBufferMask.ColorBufferBit);
@@ -217,7 +226,6 @@ public class ImGuiForm : Form
 
             _controller.Render();
             
-            // SwapBuffers blocks if VSync is true, pacing the loop perfectly
             _glControl.SwapBuffers();
         }
     }
@@ -327,6 +335,12 @@ public class ImGuiForm : Form
         bool wim = _cfg.WorkInMenus;
         if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
 
+        float ping = (float)_cfg.PingMs;
+        ImGui.SetNextItemWidth(300);
+        if (ImGui.SliderFloat("Ping (ms)", ref ping, 0f, 200f, "%.0f"))
+            _cfg.PingMs = ping;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+
 
         ImGui.NextColumn();
 
@@ -359,9 +373,7 @@ public class ImGuiForm : Form
             }
         }
 
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Jitter: legit human-like variance");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Butterfly: rapid double-click");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "NoDelay: constant, no randomization");
+        DrawLiveStats(_clicker.StatLiveCps, _clicker.StatAvgCps, _clicker.StatInterval, _clicker.StatJitter, _clicker.StatLast, _clicker.StatLate, _clicker.StatWorstLate, _clicker.StatSamples);
 
         ImGui.Columns(1);
     }
@@ -406,9 +418,7 @@ public class ImGuiForm : Form
         if (ImGui.Combo("Randomization##RMB", ref randIdx, randModes, randModes.Length))
             _cfg.RightRandMode = randIdx;
 
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Jitter: legit human-like variance");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Butterfly: rapid double-click");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "NoDelay: constant, no randomization");
+        DrawLiveStats(_rightClicker.StatLiveCps, _rightClicker.StatAvgCps, _rightClicker.StatInterval, _rightClicker.StatJitter, _rightClicker.StatLast, _rightClicker.StatLate, _rightClicker.StatWorstLate, _rightClicker.StatSamples);
 
         ImGui.Columns(1);
     }
@@ -633,11 +643,11 @@ public class ImGuiForm : Form
     // Cached version: only rescans filesystem every 5 seconds
     private List<string> GetSoundsCached()
     {
-        long now = _frameSw.ElapsedMilliseconds + _soundsCacheTimeMs;
-        if (_cachedSounds == null || (Environment.TickCount - _soundsCacheTimeMs) > 5000)
+        long now = Environment.TickCount;
+        if (_cachedSounds == null || (now - _soundsCacheTimeMs) > 5000)
         {
             _cachedSounds = GetSounds();
-            _soundsCacheTimeMs = Environment.TickCount;
+            _soundsCacheTimeMs = now;
         }
         return _cachedSounds;
     }
@@ -742,5 +752,34 @@ public class ImGuiForm : Form
         if (_texLogo != 0) GL.DeleteTexture(_texLogo);
         if (_texBg != 0) GL.DeleteTexture(_texBg);
         if (_texEaster != 0) GL.DeleteTexture(_texEaster);
+    }
+    private void DrawLiveStats(double liveCps, double avgCps, double interval, double jitter, double last, int late, double worstLate, int samples)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1f));
+        ImGui.Text("Live");
+        ImGui.SetWindowFontScale(1.8f);
+        ImGui.Text($"{liveCps:F1}");
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.PopStyleColor();
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Average: {avgCps:F1}");
+        ImGui.Separator();
+        
+        ImGui.Text("Stability");
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Interval: {interval:F2} ms   Jitter: {jitter:F2} ms");
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Last: {last:F2} ms   Late: {late}");
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Worst late: {worstLate:F2} ms   Samples: {samples}");
+        
+        bool isStable = jitter < 2.0;
+        if (samples > 0)
+        {
+            if (isStable)
+                ImGui.TextColored(new Vector4(0.2f, 0.8f, 0.4f, 1f), "Stable");
+            else
+                ImGui.TextColored(new Vector4(0.8f, 0.2f, 0.2f, 1f), "Unstable");
+        }
+        else
+        {
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Waiting for clicks...");
+        }
     }
 }

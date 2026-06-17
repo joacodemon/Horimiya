@@ -50,7 +50,7 @@ namespace lospoderosos_lite.UI
         // UI refs for sync
         FlatCheck  _chkTgl, _chkOig, _chkRmb, _chkWim, _chkRefill;
         FlatCheck  _chkRpc, _chkParticle;
-        FlatSlider _sldrCps;
+        FlatSlider _sldrCps, _sldrPing;
         FlatDrop   _dRand;
         FlatDrop   _dMode, _dBB, _dSnd;
         Button     _btnBind, _btnHide, _btnColor, _btnDestructBind;
@@ -355,9 +355,16 @@ namespace lospoderosos_lite.UI
             _chkRmb.Click  += (s,e) => _cfg.RmbLock     = _chkRmb.Checked;
             _chkWim.Click  += (s,e) => _cfg.WorkInMenus = _chkWim.Checked;
 
-            lft.Controls.Add(Lbl("Main click settings and restrictions.", DIM, 8, 210, FNT));
+            // Ping (ms) slider
+            _sldrPing = new FlatSlider(_cfg.PingMs, 0.0, 200.0)
+                { Location = new Point(8, 142), Size = new Size(380, 22) };
+            _sldrPing.ValueChanged += (s,e) => _cfg.PingMs = _sldrPing.Value;
+            _sldrPing.MouseUp += (s,e) => _cfg.Save();
+            lft.Controls.Add(Lbl("Ping (ms)", DIM, 395, 148, FNT));
+
+            lft.Controls.Add(Lbl("Latency compensation for hit registration.", DIM, 8, 210, FNT));
             lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
-                _chkOig, _chkRmb, _chkWim });
+                _chkOig, _chkRmb, _chkWim, _sldrPing });
 
             // Right box
             var rgt = Box(RX, 40, RW, BH);
@@ -377,7 +384,7 @@ namespace lospoderosos_lite.UI
             _dRand.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay", "Manual" });
             _dRand.SelectedIndex = _cfg.RandMode;
             
-            var btnManualEdit = BoxBtn("Edit Custom Randomization", TXT, 8, 236, RW - 20, 22);
+            var btnManualEdit = BoxBtn("Edit Custom Randomization", TXT, 8, 300, RW - 20, 22);
             btnManualEdit.Visible = (_cfg.RandMode == 3);
             btnManualEdit.Click += (s, e) => {
                 using (var crf = new CustomRandForm(_cfg, _accentColor)) {
@@ -391,9 +398,40 @@ namespace lospoderosos_lite.UI
                 btnManualEdit.Visible = (_cfg.RandMode == 3);
             };
             rgt.Controls.Add(AccentBorderWrap(_dRand, 7, 158, RW - 18, 20));
-            rgt.Controls.Add(Lbl("Jitter: legit human-like variance", DIM, 8, 184, FNT));
-            rgt.Controls.Add(Lbl("Butterfly: rapid double-click", DIM, 8, 200, FNT));
-            rgt.Controls.Add(Lbl("NoDelay: constant, no randomization", DIM, 8, 216, FNT));
+
+            var lblLiveTitle = Lbl("Live", TXT, 8, 184, FNT);
+            var lblLiveVal = Lbl("0.0", TXT, 8, 198, new Font("Courier New", 18F, FontStyle.Bold));
+            var lblAvgCps = Lbl("Average: 0.0", DIM, 8, 228, FNT);
+            
+            var lblStabTitle = Lbl("Stability", TXT, 140, 184, FNT);
+            var lblStab1 = Lbl("Interval: 0.00 ms   Jitter: 0.00 ms", DIM, 140, 198, FNT);
+            var lblStab2 = Lbl("Last: 0.00 ms   Late: 0", DIM, 140, 210, FNT);
+            var lblStab3 = Lbl("Worst late: 0.00 ms   Samples: 0", DIM, 140, 222, FNT);
+            var lblStabStatus = Lbl("Waiting for clicks...", DIM, 140, 234, FNT);
+
+            var statTimer = new System.Windows.Forms.Timer { Interval = 50 };
+            statTimer.Tick += (sender, e) => {
+                if (_clicker == null) return;
+                lblLiveVal.Text = _clicker.StatLiveCps.ToString("F1");
+                lblAvgCps.Text = "Average: " + _clicker.StatAvgCps.ToString("F1");
+                lblStab1.Text = string.Format("Interval: {0:F2} ms   Jitter: {1:F2} ms", _clicker.StatInterval, _clicker.StatJitter);
+                lblStab2.Text = string.Format("Last: {0:F2} ms   Late: {1}", _clicker.StatLast, _clicker.StatLate);
+                lblStab3.Text = string.Format("Worst late: {0:F2} ms   Samples: {1}", _clicker.StatWorstLate, _clicker.StatSamples);
+                
+                if (_clicker.StatSamples > 0)
+                {
+                    if (_clicker.StatJitter < 2.0) {
+                        lblStabStatus.Text = "[Stable]";
+                        lblStabStatus.ForeColor = Color.FromArgb(50, 200, 100);
+                    } else {
+                        lblStabStatus.Text = "[Unstable]";
+                        lblStabStatus.ForeColor = Color.FromArgb(200, 50, 50);
+                    }
+                }
+            };
+            statTimer.Start();
+
+            rgt.Controls.AddRange(new Control[] { lblLiveTitle, lblLiveVal, lblAvgCps, lblStabTitle, lblStab1, lblStab2, lblStab3, lblStabStatus });
 
             p.Controls.AddRange(new Control[] { lft, rgt });
             return p;
@@ -705,7 +743,7 @@ namespace lospoderosos_lite.UI
             bAbout.Controls.Add(Lbl("• expiration date: never", DIM, 15, 60, FNT));
 
             bAbout.Controls.Add(Lbl("about los poderosos", DIM, 10, 100, FNT));
-            bAbout.Controls.Add(Lbl("• build version: 2.1.5", DIM, 15, 120, FNT));
+            bAbout.Controls.Add(Lbl("• build version: 2.2.7", DIM, 15, 120, FNT));
             bAbout.Controls.Add(Lbl("• build type: faction", DIM, 15, 140, FNT));
 
             bAbout.Controls.Add(HSep(10, 200, 270));
@@ -929,6 +967,7 @@ namespace lospoderosos_lite.UI
                 _cfg.RandMode = loaded.RandMode;
                 _cfg.ColorAccent = loaded.ColorAccent; _cfg.ParticleEnabled = loaded.ParticleEnabled;
                 _cfg.RefillMode = loaded.RefillMode;
+                _cfg.PingMs = loaded.PingMs;
                 if (_particleOverlay != null) {
                     _particleOverlay.AccentArgb = _cfg.ColorAccent;
                     _particleOverlay.ParticlesEnabled = _cfg.ParticleEnabled;
@@ -939,6 +978,7 @@ namespace lospoderosos_lite.UI
         void SyncUI()
         {
             if (_sldrCps != null) { _sldrCps.Max = 50.0; _sldrCps.Value = _cfg.AverageCps; _sldrCps.Invalidate(); }
+            if (_sldrPing != null) { _sldrPing.Value = _cfg.PingMs; _sldrPing.Invalidate(); }
             if (_chkOig  != null) { _chkOig.Checked  = _cfg.OnlyInGame;  _chkOig.Invalidate(); }
             if (_chkRmb  != null) { _chkRmb.Checked  = _cfg.RmbLock;     _chkRmb.Invalidate(); }
             if (_chkWim  != null) { _chkWim.Checked  = _cfg.WorkInMenus; _chkWim.Invalidate(); }
