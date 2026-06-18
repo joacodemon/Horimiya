@@ -2,6 +2,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace lospoderosos_lite.Modules
@@ -12,58 +14,72 @@ namespace lospoderosos_lite.Modules
         // Ejemplo de contenido de version.txt: 2.3.0|https://tu-sitio.com/lospoderosos.exe
         public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/lospoderosos/main/version.txt";
 
+        // HttpClient reutilizable (thread-safe, no usar using)
+        private static readonly HttpClient _httpClient;
+
+        static Updater()
+        {
+            // Asegurarse de usar TLS 1.2 / 1.3 (Requerido por GitHub)
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls13;
+
+            var handler = new HttpClientHandler
+            {
+                AllowAutoRedirect = true,           // Seguir redirecciones 302 de GitHub Releases
+                MaxAutomaticRedirections = 10,
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+
+            _httpClient = new HttpClient(handler);
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+            _httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout generoso para descargas grandes
+        }
+
         public static void CheckForUpdates(string currentVersion)
         {
             try
             {
-                // Asegurarse de usar TLS 1.2 (Requerido por GitHub)
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-                using (var client = new WebClient())
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("Checking for updates...");
+
+                var noCacheUrl = VersionUrl + "?t=" + DateTime.Now.Ticks;
+                var response = _httpClient.GetStringAsync(noCacheUrl).GetAwaiter().GetResult();
+                if (!string.IsNullOrWhiteSpace(response))
                 {
-                    client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("Checking for updates...");
-
-                    var noCacheUrl = VersionUrl + "?t=" + DateTime.Now.Ticks;
-                    var response = client.DownloadString(noCacheUrl);
-                    if (!string.IsNullOrWhiteSpace(response))
+                    var parts = response.Trim().Split('|');
+                    if (parts.Length >= 2)
                     {
-                        var parts = response.Trim().Split('|');
-                        if (parts.Length >= 2)
+                        string latestVersion = parts[0].Trim();
+                        string downloadUrl   = parts[1].Trim();
+
+                        // ── Comparación semántica: solo actualizar si remoto > actual ──
+                        // Esto evita el bucle infinito donde el Release tiene una versión
+                        // más vieja que el exe actual y el updater intenta "downgrade" en loop.
+                        int cmp = CompareVersions(latestVersion, currentVersion);
+
+                        if (cmp > 0)
                         {
-                            string latestVersion = parts[0].Trim();
-                            string downloadUrl   = parts[1].Trim();
+                            // Remoto es mayor → actualizar
+                            MessageBox.Show(
+                                $"Se ha encontrado una nueva versión ({latestVersion}).\nSe descargará y actualizará automáticamente.",
+                                "Actualización Disponible", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                            // ── Comparación semántica: solo actualizar si remoto > actual ──
-                            // Esto evita el bucle infinito donde el Release tiene una versión
-                            // más vieja que el exe actual y el updater intenta "downgrade" en loop.
-                            int cmp = CompareVersions(latestVersion, currentVersion);
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            Console.WriteLine($"\nNew version found! [{currentVersion} -> {latestVersion}]");
+                            Console.WriteLine("Downloading update, please wait...");
 
-                            if (cmp > 0)
-                            {
-                                // Remoto es mayor → actualizar
-                                MessageBox.Show(
-                                    $"Se ha encontrado una nueva versión ({latestVersion}).\nSe descargará y actualizará automáticamente.",
-                                    "Actualización Disponible", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                                Console.ForegroundColor = ConsoleColor.Cyan;
-                                Console.WriteLine($"\nNew version found! [{currentVersion} -> {latestVersion}]");
-                                Console.WriteLine("Downloading update, please wait...");
-
-                                DownloadAndApplyUpdate(downloadUrl);
-                            }
-                            else if (cmp < 0)
-                            {
-                                // Remoto es menor que el actual (Release desactualizado) → no hacer nada
-                                Console.ForegroundColor = ConsoleColor.Green;
-                                Console.WriteLine($"Running ahead of release ({currentVersion}). No update needed.");
-                            }
-                            else
-                            {
-                                // Misma versión → todo OK
-                                Console.ForegroundColor = ConsoleColor.Green;
-                                Console.WriteLine("You are running the latest version.");
-                            }
+                            DownloadAndApplyUpdate(downloadUrl);
+                        }
+                        else if (cmp < 0)
+                        {
+                            // Remoto es menor que el actual (Release desactualizado) → no hacer nada
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine($"Running ahead of release ({currentVersion}). No update needed.");
+                        }
+                        else
+                        {
+                            // Misma versión → todo OK
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.WriteLine("You are running the latest version.");
                         }
                     }
                 }
@@ -109,10 +125,49 @@ namespace lospoderosos_lite.Modules
                 string newPath  = currentPath + ".new";
                 string oldPath  = currentPath + ".old";
 
-                using (var webClient = new WebClient())
+                // Descargar con reintentos (GitHub a veces resetea la conexión)
+                const int maxRetries = 3;
+                Exception lastException = null;
+
+                for (int attempt = 1; attempt <= maxRetries; attempt++)
                 {
-                    webClient.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-                    webClient.DownloadFile(url, newPath);
+                    try
+                    {
+                        if (attempt > 1)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.WriteLine($"Retry attempt {attempt}/{maxRetries}...");
+                            Thread.Sleep(2000 * attempt); // Espera progresiva entre reintentos
+                        }
+
+                        using (var response = _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
+                        {
+                            response.EnsureSuccessStatusCode();
+
+                            using (var contentStream = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                            using (var fileStream = new FileStream(newPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192))
+                            {
+                                contentStream.CopyTo(fileStream);
+                            }
+                        }
+
+                        lastException = null;
+                        break; // Descarga exitosa, salir del loop
+                    }
+                    catch (Exception retryEx)
+                    {
+                        lastException = retryEx;
+                        // Limpiar archivo parcial si existe
+                        if (File.Exists(newPath))
+                        {
+                            try { File.Delete(newPath); } catch { }
+                        }
+                    }
+                }
+
+                if (lastException != null)
+                {
+                    throw lastException; // Todos los reintentos fallaron
                 }
 
                 // Verificar que el archivo descargado tenga tamaño razonable (> 500 KB)
@@ -135,7 +190,7 @@ namespace lospoderosos_lite.Modules
 
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("Update successful! Restarting...\n");
-                System.Threading.Thread.Sleep(1000);
+                Thread.Sleep(1000);
 
                 // Iniciar la nueva versión
                 Process.Start(currentPath);

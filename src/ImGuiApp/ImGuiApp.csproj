@@ -34,5 +34,6 @@
     <Compile Include="..\Modules\Updater.cs" />
     <EmbeddedResource Include="Resources\*.png" />
     <EmbeddedResource Include="costura-win-x64\cimgui.dll" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 </Project>
