@@ -758,13 +758,13 @@ public class ImGuiForm : Form
     }
     private void DrawLiveStats(double liveCps, double avgCps, double interval, double jitter, double last, int late, double worstLate, int samples)
     {
-        // Draw a child window with a border and dark background so it's not transparent over the image
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.08f, 0.08f, 0.08f, 0.95f));
+        // Draw a child window with a subtle translucent background to blend with the GUI image
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.0f, 0.0f, 0.0f, 0.4f));
         ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 8.0f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(15, 15));
         
-        // Let it fill the remaining space or have a fixed height
-        if (ImGui.BeginChild("LiveStatsPanel", new Vector2(0, 0), true, ImGuiWindowFlags.AlwaysUseWindowPadding))
+        // Let it fill the remaining space or have a fixed height. No border (false).
+        if (ImGui.BeginChild("LiveStatsPanel", new Vector2(0, 0), false, ImGuiWindowFlags.AlwaysUseWindowPadding))
         {
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
             ImGui.Text("Live");
