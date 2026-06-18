@@ -11,15 +11,16 @@ namespace lospoderosos_lite.Config
         public string Name      = "";
         public string Server    = "";
         public double Cps = 15.0;
-        public int    RandMode  = 2;    // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Manual
+        public int    RandMode  = 2;    // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Custom
         public bool   IsBuiltIn = false;
+        public double[] CustomCpsWeights = null; // Only used when RandMode == 3
 
         public string RandModeName()
         {
             if (RandMode == 0) return "jitter";
             if (RandMode == 1) return "butterfly";
             if (RandMode == 2) return "nodelay";
-            return "manual";
+            return "custom";
         }
     }
 
@@ -70,8 +71,7 @@ namespace lospoderosos_lite.Config
         {
             Instance = this;
             // Default built-in presets
-            Presets.Add(new PresetConfig { Name = "cavepvp.com",    Server = "cavepvp.com",    Cps = 16.7, RandMode = 2, IsBuiltIn = true });
-            Presets.Add(new PresetConfig { Name = "elevatemc.com",  Server = "elevatemc.com",  Cps = 16.7, RandMode = 2, IsBuiltIn = true });
+            Presets.Add(new PresetConfig { Name = "elevatemc.com / cavepvp.com",  Server = "elevatemc.com / cavepvp.com",  Cps = 16.7, RandMode = 2, IsBuiltIn = true });
             Presets.Add(new PresetConfig { Name = "minemen.club",   Server = "minemen.club",   Cps = 20.0, RandMode = 2, IsBuiltIn = true });
         }
 
@@ -134,8 +134,18 @@ namespace lospoderosos_lite.Config
             foreach (var pr in Presets)
             {
                 if (pr.IsBuiltIn) continue;
-                if (!first) sb.AppendLine(",");
-                sb.Append(string.Format("    {{\"Name\":\"{0}\",\"Server\":\"{1}\",\"Cps\":{2},\"RandMode\":{3}}}", pr.Name.Replace("\"", "\\\""), pr.Server.Replace("\"", "\\\""), pr.Cps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), pr.RandMode));
+                sb.Append(string.Format("    {{\"Name\":\"{0}\",\"Server\":\"{1}\",\"Cps\":{2},\"RandMode\":{3}", pr.Name.Replace("\"", "\\\""), pr.Server.Replace("\"", "\\\""), pr.Cps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), pr.RandMode));
+                if (pr.CustomCpsWeights != null && pr.CustomCpsWeights.Length > 0)
+                {
+                    sb.Append(",\"CustomCpsWeights\":[");
+                    for (int i = 0; i < pr.CustomCpsWeights.Length; i++)
+                    {
+                        sb.Append(pr.CustomCpsWeights[i].ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+                        if (i < pr.CustomCpsWeights.Length - 1) sb.Append(",");
+                    }
+                    sb.Append("]");
+                }
+                sb.Append("}");
                 first = false;
             }
             sb.AppendLine();
@@ -299,8 +309,9 @@ namespace lospoderosos_lite.Config
                 double cps = GetDoubleFromObj(obj, "Cps", 13.0);
                 // UI initialization moved to a dedicated method. Existing stray code removed.
                 int rand = GetIntFromObj(obj, "RandMode", 2);
+                double[] customWeights = GetDoubleArrayFromObj(obj, "CustomCpsWeights");
                 if (!string.IsNullOrEmpty(name))
-                    list.Add(new PresetConfig { Name = name, Server = server, Cps = cps, RandMode = rand, IsBuiltIn = false });
+                    list.Add(new PresetConfig { Name = name, Server = server, Cps = cps, RandMode = rand, IsBuiltIn = false, CustomCpsWeights = customWeights });
                 pos = cb + 1;
             }
         }
@@ -342,6 +353,21 @@ namespace lospoderosos_lite.Config
             int val;
             string raw = obj.Substring(start, end - start).Trim();
             return int.TryParse(raw, out val) ? val : def;
+        }
+
+        private static double[] GetDoubleArrayFromObj(string obj, string key)
+        {
+            string s = "\"" + key + "\":[";
+            int idx = obj.IndexOf(s);
+            if (idx < 0) return null;
+            int start = idx + s.Length;
+            int end = obj.IndexOf(']', start);
+            if (end < 0) return null;
+            var parts = obj.Substring(start, end - start).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var arr = new double[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+                double.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arr[i]);
+            return arr;
         }
     }
 }

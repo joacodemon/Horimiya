@@ -53,6 +53,8 @@ public class ImGuiForm : Form
     // Cached sound list to avoid filesystem scanning every frame
     private List<string> _cachedSounds = null;
     private long _soundsCacheTimeMs = 0;
+    
+    private lospoderosos_lite.IoT.IoTManager _iot;
 
     public ImGuiForm(AppConfig cfg, Clicker clicker, RightClicker rightClicker, Recorder recorder, Misc misc)
     {
@@ -62,10 +64,17 @@ public class ImGuiForm : Form
         _recorder = recorder;
         _misc = misc;
 
+        _iot = new lospoderosos_lite.IoT.IoTManager(_cfg);
+        _iot.MessageReceived += OnIotMessageReceived;
+        _ = _iot.StartAsync();
+        _rightClicker = rightClicker;
+        _recorder = recorder;
+        _misc = misc;
+
         for (int i = 0; i < 25; i++)
             _customCpsWeightsFloat[i] = (float)_cfg.CustomCpsWeights[i];
 
-        Text = "Los Poderosos - ImGui UI";
+        Text = "Los Poderosisimos";
         ClientSize = new Size(950, 470);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
@@ -148,41 +157,42 @@ public class ImGuiForm : Form
     private void ApplyTheme()
     {
         var style = ImGui.GetStyle();
-        Color accent = Color.FromArgb(_cfg.ColorAccent);
-        Vector4 accVec = new Vector4(accent.R / 255f, accent.G / 255f, accent.B / 255f, 1f);
-        Vector4 accHoverVec = new Vector4(Math.Min(1f, accent.R / 255f + 0.2f), Math.Min(1f, accent.G / 255f + 0.2f), Math.Min(1f, accent.B / 255f + 0.2f), 1f);
-        Vector4 accActiveVec = new Vector4(Math.Max(0f, accent.R / 255f - 0.2f), Math.Max(0f, accent.G / 255f - 0.2f), Math.Max(0f, accent.B / 255f - 0.2f), 1f);
+        // Force MARCELINE pink accent
+        _cfg.ColorAccent = Color.FromArgb(255, 30, 86).ToArgb(); 
+        Vector4 accVec = new Vector4(1.0f, 0.12f, 0.34f, 1f);
+        Vector4 accHoverVec = new Vector4(1.0f, 0.22f, 0.44f, 1f);
+        Vector4 accActiveVec = new Vector4(0.8f, 0.05f, 0.24f, 1f);
 
-        style.Colors[(int)ImGuiCol.Text] = new Vector4(0.90f, 0.90f, 0.90f, 1.00f);
-        style.Colors[(int)ImGuiCol.WindowBg] = new Vector4(0.06f, 0.06f, 0.06f, 0.94f);
-        style.Colors[(int)ImGuiCol.Border] = new Vector4(0.30f, 0.30f, 0.30f, 0.50f);
-        style.Colors[(int)ImGuiCol.FrameBg] = new Vector4(0.16f, 0.16f, 0.16f, 1.00f);
-        style.Colors[(int)ImGuiCol.FrameBgHovered] = new Vector4(0.24f, 0.24f, 0.24f, 1.00f);
-        style.Colors[(int)ImGuiCol.FrameBgActive] = new Vector4(0.30f, 0.30f, 0.30f, 1.00f);
+        // Deep dark theme matching MARCELINE
+        style.Colors[(int)ImGuiCol.Text] = new Vector4(0.85f, 0.85f, 0.85f, 1.00f);
+        style.Colors[(int)ImGuiCol.WindowBg] = new Vector4(0.06f, 0.06f, 0.06f, 1.00f);
+        style.Colors[(int)ImGuiCol.ChildBg] = new Vector4(0.04f, 0.04f, 0.04f, 1.00f);
+        style.Colors[(int)ImGuiCol.Border] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
+        style.Colors[(int)ImGuiCol.FrameBg] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
+        style.Colors[(int)ImGuiCol.FrameBgHovered] = new Vector4(0.18f, 0.18f, 0.18f, 1.00f);
+        style.Colors[(int)ImGuiCol.FrameBgActive] = new Vector4(0.24f, 0.24f, 0.24f, 1.00f);
         style.Colors[(int)ImGuiCol.TitleBg] = new Vector4(0.04f, 0.04f, 0.04f, 1.00f);
         style.Colors[(int)ImGuiCol.TitleBgActive] = new Vector4(0.04f, 0.04f, 0.04f, 1.00f);
         style.Colors[(int)ImGuiCol.CheckMark] = accVec;
         style.Colors[(int)ImGuiCol.SliderGrab] = accVec;
         style.Colors[(int)ImGuiCol.SliderGrabActive] = accActiveVec;
-        style.Colors[(int)ImGuiCol.Button] = new Vector4(0.16f, 0.16f, 0.16f, 1.00f);
-        style.Colors[(int)ImGuiCol.ButtonHovered] = accVec;
+        style.Colors[(int)ImGuiCol.Button] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
+        style.Colors[(int)ImGuiCol.ButtonHovered] = accHoverVec;
         style.Colors[(int)ImGuiCol.ButtonActive] = accActiveVec;
-        style.Colors[(int)ImGuiCol.Header] = accVec;
-        style.Colors[(int)ImGuiCol.HeaderHovered] = accHoverVec;
-        style.Colors[(int)ImGuiCol.HeaderActive] = accActiveVec;
-        style.Colors[(int)ImGuiCol.Tab] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
-        style.Colors[(int)ImGuiCol.TabHovered] = accVec;
-        style.Colors[(int)ImGuiCol.TabActive] = accActiveVec;
-        style.Colors[(int)ImGuiCol.TabUnfocused] = new Vector4(0.08f, 0.08f, 0.08f, 1.00f);
-        style.Colors[(int)ImGuiCol.TabUnfocusedActive] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
+        style.Colors[(int)ImGuiCol.Header] = new Vector4(0.12f, 0.12f, 0.12f, 1.00f);
+        style.Colors[(int)ImGuiCol.HeaderHovered] = new Vector4(0.15f, 0.15f, 0.15f, 1.00f);
+        style.Colors[(int)ImGuiCol.HeaderActive] = new Vector4(0.18f, 0.18f, 0.18f, 1.00f);
+        style.Colors[(int)ImGuiCol.Separator] = new Vector4(0.15f, 0.15f, 0.15f, 1.00f);
 
-        style.WindowRounding = 6.0f;
-        style.ChildRounding = 6.0f;
-        style.FrameRounding = 4.0f;
-        style.PopupRounding = 4.0f;
-        style.ScrollbarRounding = 4.0f;
-        style.GrabRounding = 4.0f;
-        style.TabRounding = 4.0f;
+        style.WindowRounding = 8.0f;
+        style.ChildRounding = 8.0f;
+        style.FrameRounding = 6.0f;
+        style.PopupRounding = 6.0f;
+        style.ScrollbarRounding = 6.0f;
+        style.GrabRounding = 6.0f;
+        
+        // Hide background image to enforce opaque dark theme
+        _showBg = false;
     }
 
     private void LoadTaskbarIcon()
@@ -250,115 +260,162 @@ public class ImGuiForm : Form
         return PeekMessage(out result, IntPtr.Zero, 0, 0, 0) == 0;
     }
 
+    private int _currentTab = 0; // 0: Clicker, 1: RMB, 2: Settings
+
     private void DrawUI()
     {
         ImGui.SetNextWindowPos(new Vector2(0, 0));
         ImGui.SetNextWindowSize(new Vector2(950, 470));
         
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(0, 0));
         ImGui.Begin("Main", ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoBringToFrontOnFocus);
+        ImGui.PopStyleVar();
 
-        if (_showBg && _texBg != 0)
-        {
-            ImGui.GetWindowDrawList().AddImage((IntPtr)_texBg, new Vector2(0, 0), new Vector2(950, 470));
-        }
+        // Top Header matching MARCELINE
+        ImGui.SetCursorPos(new Vector2(20, 15));
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.12f, 0.34f, 1f));
+        ImGui.SetWindowFontScale(1.4f);
+        ImGui.Text("LOS PODEROSISIMOS"); 
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.PopStyleColor();
 
-        // Header
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "los poderosos");
+        ImGui.SameLine(950 - 150);
+        ImGui.SetCursorPos(new Vector2(650, 20));
+        ImGui.TextColored(new Vector4(0.8f, 0.2f, 0.2f, 1f), "los poderosisimos by joacodemon");
+        
+        ImGui.SetCursorPos(new Vector2(10, 45));
+        ImGui.PushStyleColor(ImGuiCol.Separator, new Vector4(0.15f, 0.15f, 0.15f, 1f));
         ImGui.Separator();
+        ImGui.PopStyleColor();
 
-        if (ImGui.BeginTabBar("Tabs", ImGuiTabBarFlags.None))
+        // Main layout container
+        ImGui.SetCursorPos(new Vector2(10, 55));
+        
+        // --- Sidebar ---
+        if (ImGui.BeginChild("Sidebar", new Vector2(200, 400), true))
         {
-            if (ImGui.BeginTabItem("LMB"))
-            {
-                DrawLMBTab();
-                ImGui.EndTabItem();
-            }
-            if (ImGui.BeginTabItem("RMB"))
-            {
-                DrawRMBTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("PRESETS"))
-            {
-                DrawPresetsTab();
-                ImGui.EndTabItem();
-            }
-            if (ImGui.BeginTabItem("MISC"))
-            {
-                DrawMiscTab();
-                ImGui.EndTabItem();
-            }
-            ImGui.EndTabBar();
+            ImGui.Dummy(new Vector2(0, 5));
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Clicker");
+            ImGui.Dummy(new Vector2(0, 5));
+            if (DrawSidebarTab("Left Clicker", _currentTab == 0)) _currentTab = 0;
+            if (DrawSidebarTab("Right Clicker", _currentTab == 1)) _currentTab = 1;
+            
+            ImGui.Dummy(new Vector2(0, 15));
+            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Settings");
+            ImGui.Dummy(new Vector2(0, 5));
+            if (DrawSidebarTab("Settings", _currentTab == 2)) _currentTab = 2;
         }
+        ImGui.EndChild();
+
+        ImGui.SameLine();
+
+        // --- Content ---
+        if (ImGui.BeginChild("Content", new Vector2(720, 400), true))
+        {
+            if (_currentTab == 0) DrawLMBTab();
+            else if (_currentTab == 1) DrawRMBTab();
+            else if (_currentTab == 2) DrawSettingsTab();
+        }
+        ImGui.EndChild();
 
         ImGui.End();
     }
 
+    private bool DrawSidebarTab(string label, bool selected)
+    {
+        bool clicked = false;
+        Vector2 pos = ImGui.GetCursorScreenPos();
+        Vector2 size = new Vector2(180, 30);
+        
+        if (ImGui.InvisibleButton(label, size)) clicked = true;
+        bool hovered = ImGui.IsItemHovered();
+        
+        var dl = ImGui.GetWindowDrawList();
+        
+        // Background
+        if (selected) dl.AddRectFilled(pos, pos + size, ImGui.GetColorU32(new Vector4(0.12f, 0.12f, 0.12f, 1f)), 4f);
+        else if (hovered) dl.AddRectFilled(pos, pos + size, ImGui.GetColorU32(new Vector4(0.08f, 0.08f, 0.08f, 1f)), 4f);
+        
+        // Left pink bar for selected
+        if (selected)
+        {
+            dl.AddRectFilled(pos, new Vector2(pos.X + 3, pos.Y + size.Y), ImGui.GetColorU32(new Vector4(1f, 0.12f, 0.34f, 1f)), 4f);
+        }
+        
+        // Text
+        dl.AddText(new Vector2(pos.X + 15, pos.Y + 7), ImGui.GetColorU32(new Vector4(0.85f, 0.85f, 0.85f, 1f)), label);
+        
+        return clicked;
+    }
+
+    private bool DrawToggle(string label, ref bool v)
+    {
+        Vector2 p = ImGui.GetCursorScreenPos();
+        var draw_list = ImGui.GetWindowDrawList();
+
+        float height = 24.0f;
+        float width = 45.0f;
+        float radius = height * 0.5f;
+
+        ImGui.InvisibleButton(label, new Vector2(width, height));
+        bool clicked = false;
+        if (ImGui.IsItemClicked())
+        {
+            v = !v;
+            clicked = true;
+        }
+
+        float t = v ? 1.0f : 0.0f;
+
+        // Background color
+        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.3f, 0.3f, 0.3f, 1f) : new Vector4(0.12f, 0.12f, 0.12f, 1f));
+        draw_list.AddRectFilled(p, new Vector2(p.X + width, p.Y + height), col_bg, radius);
+
+        // Circle color
+        uint col_circle = ImGui.GetColorU32(new Vector4(0.9f, 0.9f, 0.9f, 1f));
+        float circle_x = p.X + radius + t * (width - radius * 2.0f);
+        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius), radius - 3.0f, col_circle);
+
+        ImGui.SameLine();
+        string displayLabel = label;
+        int hashIdx = label.IndexOf("##");
+        if (hashIdx >= 0) displayLabel = label.Substring(0, hashIdx);
+        ImGui.Text(displayLabel);
+        
+        return clicked;
+    }
+
     private void DrawLMBTab()
     {
-        ImGui.Text("Left Clicker Settings");
-        ImGui.Separator();
-
         ImGui.Columns(2, "lmb_cols", false);
-        ImGui.SetColumnWidth(0, 450);
+        ImGui.SetColumnWidth(0, 400);
 
-        // Left column
+        // --- Left Column ---
+        ImGui.SetWindowFontScale(1.2f);
+        ImGui.Text("Left Clicker");
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.Dummy(new Vector2(0, 5));
+
         bool clicking = _clicker.Clicking;
-        if (ImGui.Checkbox("Toggle Clicking", ref clicking))
+        if (DrawToggle("Enabled##LMB", ref clicking))
             _clicker.Clicking = clicking;
 
-        ImGui.SameLine(150);
-        string bindText = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
-        if (_bindMode && _bindingTarget == 0) bindText = "...press key...";
-        if (ImGui.Button(bindText, new Vector2(120, 0))) BeginBind(0);
-
-        ImGui.SameLine(280);
+        ImGui.Dummy(new Vector2(0, 15));
+        
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Mode");
         string[] modes = { "Hold", "Toggle", "Always" };
         int modeIdx = _cfg.Mode;
-        ImGui.SetNextItemWidth(100);
-        if (ImGui.Combo("Mode", ref modeIdx, modes, modes.Length))
+        ImGui.SetNextItemWidth(250);
+        if (ImGui.Combo("##mode", ref modeIdx, modes, modes.Length))
             _cfg.Mode = modeIdx;
 
-        float cps = (float)_cfg.AverageCps;
-        ImGui.SetNextItemWidth(300);
-        if (ImGui.SliderFloat("Average CPS", ref cps, 1.0f, 50.0f, "%.1f"))
-            _cfg.AverageCps = cps;
-        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+        ImGui.Dummy(new Vector2(0, 10));
 
-        bool oig = _cfg.OnlyInGame;
-        if (ImGui.Checkbox("Only In Game", ref oig)) _cfg.OnlyInGame = oig;
-        
-        bool rmb = _cfg.RmbLock;
-        if (ImGui.Checkbox("RMB-Lock", ref rmb)) _cfg.RmbLock = rmb;
-        
-        bool wim = _cfg.WorkInMenus;
-        if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
-
-        float ping = (float)_cfg.PingMs;
-        ImGui.SetNextItemWidth(300);
-        if (ImGui.SliderFloat("Ping (ms)", ref ping, 0f, 200f, "%.0f"))
-            _cfg.PingMs = ping;
-        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
-        
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-        ImGui.TextWrapped("Manual latency adjusts pacing smoothness only.");
-        ImGui.PopStyleColor();
-
-        ImGui.NextColumn();
-
-        // Right column
-        List<string> sounds = GetSoundsCached();
-        int soundIdx = sounds.IndexOf(_cfg.Sound);
-        if (soundIdx < 0) soundIdx = 0;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.Combo("Click Sound", ref soundIdx, sounds.ToArray(), sounds.Count))
-            _cfg.Sound = sounds[soundIdx];
-
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Randomization");
         string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Manual" };
         int randIdx = _cfg.RandMode;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.Combo("Randomization", ref randIdx, randModes, randModes.Length))
+        ImGui.SetNextItemWidth(250);
+        if (ImGui.Combo("##rand", ref randIdx, randModes, randModes.Length))
             _cfg.RandMode = randIdx;
 
         if (_cfg.RandMode == 3)
@@ -376,6 +433,54 @@ public class ImGuiForm : Form
             }
         }
 
+        ImGui.Dummy(new Vector2(0, 10));
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Clicks per Second");
+        float cps = (float)_cfg.AverageCps;
+        ImGui.SetNextItemWidth(350);
+        if (ImGui.SliderFloat("Average", ref cps, 1.0f, 50.0f, "%.1f"))
+            _cfg.AverageCps = cps;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+
+        ImGui.Dummy(new Vector2(0, 10));
+
+        float ping = (float)_cfg.PingMs;
+        ImGui.SetNextItemWidth(350);
+        if (ImGui.SliderFloat("Ping (ms)", ref ping, 0f, 200f, "%.0f"))
+            _cfg.PingMs = ping;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+        
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.5f, 0.5f, 0.5f, 1f));
+        ImGui.TextWrapped("Manual latency adjusts pacing smoothness only.");
+        ImGui.PopStyleColor();
+        
+        ImGui.Dummy(new Vector2(0, 10));
+        if (ImGui.TreeNode("Advanced Logic"))
+        {
+            List<string> sounds = GetSoundsCached();
+            int soundIdx = sounds.IndexOf(_cfg.Sound);
+            if (soundIdx < 0) soundIdx = 0;
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.Combo("Click Sound", ref soundIdx, sounds.ToArray(), sounds.Count))
+                _cfg.Sound = sounds[soundIdx];
+
+            bool oig = _cfg.OnlyInGame;
+            if (ImGui.Checkbox("Only In Game", ref oig)) _cfg.OnlyInGame = oig;
+            bool rmb = _cfg.RmbLock;
+            if (ImGui.Checkbox("RMB-Lock", ref rmb)) _cfg.RmbLock = rmb;
+            bool wim = _cfg.WorkInMenus;
+            if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
+            
+            string bindText = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
+            if (_bindMode && _bindingTarget == 0) bindText = "...press key...";
+            if (ImGui.Button(bindText, new Vector2(120, 0))) BeginBind(0);
+
+            ImGui.TreePop();
+        }
+
+        ImGui.NextColumn();
+
+        // --- Right Column ---
         DrawLiveStats(_clicker.StatLiveCps, _clicker.StatAvgCps, _clicker.StatInterval, _clicker.StatJitter, _clicker.StatLast, _clicker.StatLate, _clicker.StatWorstLate, _clicker.StatSamples);
 
         ImGui.Columns(1);
@@ -383,44 +488,59 @@ public class ImGuiForm : Form
 
     private void DrawRMBTab()
     {
-        ImGui.Text("Right Clicker Settings");
-        ImGui.Separator();
-
         ImGui.Columns(2, "rmb_cols", false);
-        ImGui.SetColumnWidth(0, 450);
+        ImGui.SetColumnWidth(0, 400);
 
-        // Left column
+        // --- Left Column ---
+        ImGui.SetWindowFontScale(1.2f);
+        ImGui.Text("Right Clicker");
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.Dummy(new Vector2(0, 5));
+
         bool clicking = _rightClicker.Clicking;
-        if (ImGui.Checkbox("Toggle Right Clicking", ref clicking))
+        if (DrawToggle("Enabled##RMB", ref clicking))
             _rightClicker.Clicking = clicking;
 
-        ImGui.SameLine(150);
-        string bindText = _cfg.RightBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.RightBind);
-        if (_bindMode && _bindingTarget == 3) bindText = "...press key...";
-        if (ImGui.Button(bindText, new Vector2(120, 0))) BeginBind(3);
-
-        ImGui.SameLine(280);
+        ImGui.Dummy(new Vector2(0, 15));
+        
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Mode");
         string[] modes = { "Hold", "Toggle", "Always" };
         int modeIdx = _cfg.RightMode;
-        ImGui.SetNextItemWidth(100);
-        if (ImGui.Combo("Mode##RMB", ref modeIdx, modes, modes.Length))
+        ImGui.SetNextItemWidth(250);
+        if (ImGui.Combo("##modeRMB", ref modeIdx, modes, modes.Length))
             _cfg.RightMode = modeIdx;
 
+        ImGui.Dummy(new Vector2(0, 10));
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Randomization");
+        string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Manual" };
+        int randIdx = _cfg.RightRandMode;
+        ImGui.SetNextItemWidth(250);
+        if (ImGui.Combo("##randRMB", ref randIdx, randModes, randModes.Length))
+            _cfg.RightRandMode = randIdx;
+
+        ImGui.Dummy(new Vector2(0, 10));
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Clicks per Second");
         float cps = (float)_cfg.RightAverageCps;
-        ImGui.SetNextItemWidth(300);
-        if (ImGui.SliderFloat("Right Average CPS", ref cps, 1.0f, 50.0f, "%.1f"))
+        ImGui.SetNextItemWidth(350);
+        if (ImGui.SliderFloat("Average##RMB", ref cps, 1.0f, 50.0f, "%.1f"))
             _cfg.RightAverageCps = cps;
         if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+        
+        ImGui.Dummy(new Vector2(0, 10));
+        if (ImGui.TreeNode("Advanced Logic##RMB"))
+        {
+            string bindText = _cfg.RightBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.RightBind);
+            if (_bindMode && _bindingTarget == 3) bindText = "...press key...";
+            if (ImGui.Button(bindText, new Vector2(120, 0))) BeginBind(3);
+
+            ImGui.TreePop();
+        }
 
         ImGui.NextColumn();
 
-        // Right column
-        string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Manual" };
-        int randIdx = _cfg.RightRandMode;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.Combo("Randomization##RMB", ref randIdx, randModes, randModes.Length))
-            _cfg.RightRandMode = randIdx;
-
+        // --- Right Column ---
         DrawLiveStats(_rightClicker.StatLiveCps, _rightClicker.StatAvgCps, _rightClicker.StatInterval, _rightClicker.StatJitter, _rightClicker.StatLast, _rightClicker.StatLate, _rightClicker.StatWorstLate, _rightClicker.StatSamples);
 
         ImGui.Columns(1);
@@ -453,24 +573,69 @@ public class ImGuiForm : Form
         ImGui.Separator();
         ImGui.Text("Save / Load Macro:");
         ImGui.SetNextItemWidth(150);
-        ImGui.InputText("##macroname", ref _recMacroName, 64);
-        ImGui.SameLine();
         if (ImGui.Button("Save")) _recorder.SaveMacro(_recMacroName);
         ImGui.SameLine();
         if (ImGui.Button("Load")) _recorder.LoadMacro(_recMacroName);
     }
 
-    private void DrawPresetsTab()
+    private void DrawSettingsTab()
     {
-        ImGui.Text("Server Presets");
-        ImGui.Separator();
+        ImGui.Columns(2, "settings_cols", false);
+        ImGui.SetColumnWidth(0, 350);
 
+        // --- Left Column ---
+        ImGui.SetWindowFontScale(1.2f);
+        ImGui.Text("Settings");
+        ImGui.SetWindowFontScale(1.0f);
+        ImGui.Dummy(new Vector2(0, 5));
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "General");
+        
+        bool ht = _cfg.HideTaskbar;
+        if (ImGui.Checkbox("Hide from Taskbar", ref ht)) {
+            _cfg.HideTaskbar = ht;
+            ShowInTaskbar = !ht;
+        }
+
+        string hbindText = _cfg.HideBind == 0 ? "Hide Bind: none" : "Hide Bind: " + KeyName(_cfg.HideBind);
+        if (_bindMode && _bindingTarget == 1) hbindText = "...press key...";
+        if (ImGui.Button(hbindText, new Vector2(200, 0))) BeginBind(1);
+
+        ImGui.Dummy(new Vector2(0, 10));
+        
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Visuals");
+        bool part = _cfg.ParticleEnabled;
+        if (ImGui.Checkbox("Particle Effect", ref part)) _cfg.ParticleEnabled = part;
+        
+        // Hide background toggle removed to force dark theme
+        
+        ImGui.Dummy(new Vector2(0, 10));
+
+        if (ImGui.Button("P+ Optimize PC", new Vector2(150, 0)))
+        {
+            _misc.OptimizePC();
+        }
+
+        ImGui.Dummy(new Vector2(0, 10));
+
+        if (ImGui.Button("Save Config", new Vector2(150, 0)))
+        {
+            _cfg.Save();
+        }
+
+        ImGui.Dummy(new Vector2(0, 10));
+        if (ImGui.Button("Destruct", new Vector2(150, 0))) Close();
+
+        ImGui.NextColumn();
+
+        // --- Right Column ---
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Server Presets");
+        
         ImGui.SetNextItemWidth(150);
         ImGui.InputText("##ps_name", ref _presetAddName, 64);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(80);
         ImGui.InputFloat("CPS", ref _presetAddCps, 0.1f, 1.0f, "%.1f");
-        ImGui.SameLine();
         string[] rModes = { "jitter", "butterfly", "nodelay", "manual" };
         ImGui.SetNextItemWidth(100);
         ImGui.Combo("##ps_rmode", ref _presetAddRand, rModes, rModes.Length);
@@ -491,45 +656,23 @@ public class ImGuiForm : Form
 
         ImGui.Separator();
 
-        if (ImGui.Button("☁ Download Cloud Presets"))
+        if (ImGui.Button("Share Current Config"))
         {
-            if (!string.IsNullOrWhiteSpace(_cfg.CloudPresetsUrl))
+            var p = new PresetConfig { Name = _presetAddName, Server = _presetAddName, Cps = _cfg.AverageCps, RandMode = _cfg.RandMode, IsBuiltIn = false };
+            if (_cfg.RandMode == 3)
             {
-                try
-                {
-                    using (var wc = new System.Net.WebClient())
-                    {
-                        string json = wc.DownloadString(_cfg.CloudPresetsUrl);
-                        // Very simple JSON array parse to extract names, servers, cps, randmode
-                        // Since we don't have NewtonSoft.Json easily available, doing a quick parse or using the existing parsing logic
-                        _recorderStatus = "Cloud presets downloaded!";
-                        // Just an example parse, should integrate with AppConfig.ParseUserPresets if possible
-                        // AppConfig.FromJson( "{\"UserPresets\":" + json + "}" ) might work if formatted right.
-                        var tempCfg = AppConfig.FromJson("{\"UserPresets\":" + json + "}");
-                        foreach(var cp in tempCfg.Presets)
-                        {
-                            if(!cp.IsBuiltIn) _cfg.Presets.Add(cp);
-                        }
-                        _cfg.Save();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _recorderStatus = "Error downloading presets: " + ex.Message;
-                }
+                p.CustomCpsWeights = new double[25];
+                Array.Copy(_cfg.CustomCpsWeights, p.CustomCpsWeights, 25);
             }
-            else
+            string json = "{\"UserPresets\":[{\"Name\":\"" + p.Name + "\",\"Server\":\"" + p.Server + "\",\"Cps\":" + p.Cps.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"RandMode\":" + p.RandMode;
+            if (p.RandMode == 3)
             {
-                _recorderStatus = "Cloud Presets URL is empty in config!";
+                json += ",\"CustomCpsWeights\":[" + string.Join(",", p.CustomCpsWeights) + "]";
             }
+            json += "}]}";
+            _ = _iot.PublishAsync(json);
         }
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(200);
-        string cloudUrl = _cfg.CloudPresetsUrl;
-        if (ImGui.InputText("Cloud URL", ref cloudUrl, 256))
-            _cfg.CloudPresetsUrl = cloudUrl;
-        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
-
+        
         ImGui.BeginChild("presets_list");
         for (int i = 0; i < _cfg.Presets.Count; i++)
         {
@@ -537,12 +680,20 @@ public class ImGuiForm : Form
             ImGui.PushID(i);
             ImGui.BeginGroup();
             
-            ImGui.Text($"{p.Name} {(p.IsBuiltIn ? "[recommended]" : "")}");
+            ImGui.Text($"{p.Name}");
             ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"avg cps: {p.Cps:F1} | rand: {p.RandModeName()}");
             if (ImGui.Button("Load"))
             {
                 _cfg.AverageCps = p.Cps;
                 _cfg.RandMode = p.RandMode;
+                if (p.RandMode == 3 && p.CustomCpsWeights != null && p.CustomCpsWeights.Length == 25)
+                {
+                    for(int w=0; w<25; w++)
+                    {
+                        _cfg.CustomCpsWeights[w] = p.CustomCpsWeights[w];
+                        _customCpsWeightsFloat[w] = (float)p.CustomCpsWeights[w];
+                    }
+                }
             }
             if (!p.IsBuiltIn)
             {
@@ -554,91 +705,23 @@ public class ImGuiForm : Form
                     ImGui.EndGroup();
                     break;
                 }
+                ImGui.SameLine();
+                if (ImGui.Button("Share", new Vector2(60, 0)))
+                {
+                    string json = "{\"UserPresets\":[{\"Name\":\"" + p.Name + "\",\"Server\":\"" + p.Server + "\",\"Cps\":" + p.Cps.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"RandMode\":" + p.RandMode;
+                    if (p.RandMode == 3 && p.CustomCpsWeights != null)
+                    {
+                        json += ",\"CustomCpsWeights\":[" + string.Join(",", p.CustomCpsWeights) + "]";
+                    }
+                    json += "}]}";
+                    _ = _iot.PublishAsync(json);
+                }
             }
             ImGui.EndGroup();
             ImGui.PopID();
             ImGui.Separator();
         }
-        if (_texEaster != 0)
-        {
-            ImGui.SameLine();
-            ImGui.Image((IntPtr)_texEaster, new Vector2(60, 60));
-        }
-
         ImGui.EndChild();
-    }
-
-    private void DrawMiscTab()
-    {
-        ImGui.Text("Miscellaneous Settings");
-        ImGui.Separator();
-
-        ImGui.Columns(3, "misc_cols", false);
-
-        // Col 1: Destruct
-        ImGui.Text("Destruct");
-        if (ImGui.Button("Flush DNS", new Vector2(200, 0)))
-        {
-            try { System.Diagnostics.Process.Start("cmd.exe", "/c \"ipconfig /flushdns & pause\""); } catch { }
-        }
-        if (ImGui.Button("BITS", new Vector2(200, 0)))
-        {
-            try 
-            {
-                string script = "@echo off\r\ntitle BITS Monitor\r\necho Monitoring BITS service... (Do not close this window)\r\n:bitch\r\nping 127.0.0.1 -n 2 >nul\r\nsc query BITS | find /I \"STATE\" | find \"STOPPED\" >nul\r\nif %ERRORLEVEL% EQU 0 goto :start\r\ngoto :bitch\r\n\r\n:start\r\necho [!] BITS is stopped. Starting it now...\r\nsc start BITS >nul\r\necho [+] BITS Started.\r\ngoto :bitch";
-                string tempBat = Path.Combine(Path.GetTempPath(), "bits_opt.bat");
-                File.WriteAllText(tempBat, script);
-                ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c \"" + tempBat + "\"");
-                psi.UseShellExecute = true;
-                psi.Verb = "runas";
-                System.Diagnostics.Process.Start(psi);
-            } 
-            catch { }
-        }
-        
-        if (ImGui.Button("Destruct", new Vector2(200, 0))) Close();
-
-        ImGui.NextColumn();
-
-        // Col 2: Hide
-        ImGui.Text("Hide");
-        bool ht = _cfg.HideTaskbar;
-        if (ImGui.Checkbox("Hide from Taskbar", ref ht)) {
-            _cfg.HideTaskbar = ht;
-            ShowInTaskbar = !ht;
-        }
-
-        string hbindText = _cfg.HideBind == 0 ? "Hide Bind: none" : "Hide Bind: " + KeyName(_cfg.HideBind);
-        if (_bindMode && _bindingTarget == 1) hbindText = "...press key...";
-        if (ImGui.Button(hbindText, new Vector2(200, 0))) BeginBind(1);
-
-        ImGui.NextColumn();
-
-        // Col 3: Visual
-        ImGui.Text("Visual Settings");
-        bool part = _cfg.ParticleEnabled;
-        if (ImGui.Checkbox("Particle Effect", ref part)) _cfg.ParticleEnabled = part;
-        
-        ImGui.Checkbox("Show Background", ref _showBg);
-
-        Color acc = Color.FromArgb(_cfg.ColorAccent);
-        Vector3 accVec = new Vector3(acc.R / 255f, acc.G / 255f, acc.B / 255f);
-        if (ImGui.ColorEdit3("Accent Color", ref accVec, ImGuiColorEditFlags.NoInputs))
-        {
-            _cfg.ColorAccent = Color.FromArgb((int)(accVec.X * 255), (int)(accVec.Y * 255), (int)(accVec.Z * 255)).ToArgb();
-            ApplyTheme();
-        }
-
-        if (ImGui.Button("Save Config"))
-        {
-            try
-            {
-                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs");
-                Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, "default.json"), _cfg.ToJson());
-                _recorderStatus = "Saved config to default.json";
-            } catch { }
-        }
 
         ImGui.Columns(1);
     }
@@ -739,6 +822,26 @@ public class ImGuiForm : Form
         else if (_bindingTarget == 3) _cfg.RightBind = vk;
     }
 
+    private void OnIotMessageReceived(object sender, string payload)
+    {
+        try
+        {
+            var tempCfg = AppConfig.FromJson(payload);
+            foreach(var cp in tempCfg.Presets)
+            {
+                if(!cp.IsBuiltIn)
+                {
+                    bool exists = false;
+                    for (int i=0; i<_cfg.Presets.Count; i++) {
+                        if (_cfg.Presets[i].Name == cp.Name) { exists = true; break; }
+                    }
+                    if (!exists) _cfg.Presets.Add(cp);
+                }
+            }
+        }
+        catch { }
+    }
+
     private void OnFormClosing(object sender, FormClosingEventArgs e)
     {
         Application.Idle -= RenderLoop;
@@ -748,6 +851,7 @@ public class ImGuiForm : Form
         _rightClicker.Stop();
         _recorder.Stop();
         _misc.Stop();
+        _iot.Dispose();
         Win32.StopMouseHook();
         Win32.timeEndPeriod(1); // Restore Windows timer resolution
 

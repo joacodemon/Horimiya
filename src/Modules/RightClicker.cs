@@ -61,7 +61,7 @@ namespace lospoderosos_lite.Modules
 
             Win32.timeBeginPeriod(1);
 
-            _thread = new Thread(ClickLoop) { IsBackground = true, Priority = ThreadPriority.AboveNormal };
+            _thread = new Thread(ClickLoop) { IsBackground = true, Priority = ThreadPriority.Highest };
             _thread.Start();
 
             _soundRunning = true;
@@ -260,8 +260,10 @@ namespace lospoderosos_lite.Modules
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     
-                    if (leftMs > 2.5) Thread.Sleep(1);
-                    else Thread.SpinWait(10);
+                    if (leftMs > 3.0)       
+                        Thread.Sleep(1);
+                    else                    
+                        Thread.SpinWait(20);
                 }
 
                 // Update Live Stats

@@ -59,6 +59,11 @@ namespace lospoderosos_lite.UI
         ParticleOverlayForm _particleOverlay;
 
         Color _accentColor = Color.FromArgb(0, 180, 255);
+        // Drag flag for custom chart interaction
+        private bool _isDragging = false;
+        // References to custom randomization UI
+        private Panel _customPanel;
+        private Label _customStats;
 
         System.Drawing.Drawing2D.GraphicsPath RoundedRect(int x, int y, int w, int h, int r)
         {
@@ -85,7 +90,7 @@ namespace lospoderosos_lite.UI
         {
             _cfg = cfg; _clicker = clicker; _recorder = recorder; _misc = misc;
 
-            Text = "los poderosos";
+            Text = "los poderosisimos";
             Size = new Size(950, 470);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition   = FormStartPosition.CenterScreen;
@@ -233,7 +238,7 @@ namespace lospoderosos_lite.UI
                 using (Pen p = new Pen(Color.FromArgb(150, _accentColor), 1))
                     e.Graphics.DrawLine(p, 0, 25, tb.Width, 25);
             };
-            var tbLbl = Lbl("los poderosos", DIM, 95, 7, FNT);
+            var tbLbl = Lbl("los poderosisimos", DIM, 95, 7, FNT);
             tbLbl.MouseDown += Drag; tb.MouseDown += Drag;
             var bX = SysBtn("x", 924, 0);
             bX.FlatAppearance.MouseOverBackColor = Color.FromArgb(190, 30, 30);
@@ -251,7 +256,7 @@ namespace lospoderosos_lite.UI
                     e.Graphics.DrawLine(p, 89, 0, 89, sb.Height);
             };
             sb.Controls.Add(Lbl("los", DIM, 5, 6, FNT));
-            sb.Controls.Add(Lbl("poderosos", DIM, 5, 18, FNT));
+            sb.Controls.Add(Lbl("poderosisimos", DIM, 5, 18, FNT));
             _bLmb  = SideBtn("LMB",  42); _bLmb.Click  += (s,e) => SetTab(0);
             _bRec  = SideBtn("REC",  72); _bRec.Click  += (s,e) => SetTab(1);
             _bPresets = SideBtn("PRESETS", 102); _bPresets.Click += (s,e) => SetTab(3);
@@ -385,17 +390,36 @@ namespace lospoderosos_lite.UI
             _dRand.SelectedIndex = _cfg.RandMode;
             
             var btnManualEdit = BoxBtn("Edit Custom Randomization", TXT, 8, 300, RW - 20, 22);
+            // Highlight when Manual Randomization is active
+            btnManualEdit.BackColor = (_cfg.RandMode == 3) ? Color.FromArgb(0, 200, 0) : _accentColor;
             btnManualEdit.Visible = (_cfg.RandMode == 3);
             btnManualEdit.Click += (s, e) => {
                 using (var crf = new CustomRandForm(_cfg, _accentColor)) {
                     crf.ShowDialog();
                 }
             };
+            // Inline custom randomization chart panel (using fields)
+            _customPanel = new Panel { Bounds = new Rectangle(8, 340, RW - 20, 140), BackColor = Color.FromArgb(20, 20, 20) };
+            _customPanel.Paint += DrawCustomChart;
+            _customPanel.MouseDown += CustomChartMouseDown;
+            _customPanel.MouseMove += CustomChartMouseMove;
+            _customPanel.MouseUp += CustomChartMouseUp;
+            _customStats = new Label { ForeColor = TXT, Font = FNT, Location = new Point(8, 490), AutoSize = true };
+            _customPanel.Visible = (_cfg.RandMode == 3);
+            _customStats.Visible = (_cfg.RandMode == 3);
+            UpdateCustomStats();
             rgt.Controls.Add(btnManualEdit);
+            rgt.Controls.Add(_customPanel);
+            rgt.Controls.Add(_customStats);
 
             _dRand.SelectedIndexChanged += (s,e) => {
                 _cfg.RandMode = _dRand.SelectedIndex;
+                // Update button appearance and visibility
                 btnManualEdit.Visible = (_cfg.RandMode == 3);
+                btnManualEdit.BackColor = (_cfg.RandMode == 3) ? Color.FromArgb(0, 200, 0) : _accentColor;
+                // Update visibility of inline custom UI
+                _customPanel.Visible = (_cfg.RandMode == 3);
+                _customStats.Visible = (_cfg.RandMode == 3);
             };
             rgt.Controls.Add(AccentBorderWrap(_dRand, 7, 158, RW - 18, 20));
 
@@ -442,7 +466,7 @@ namespace lospoderosos_lite.UI
         {
             var p = new Panel { BackColor = BG };
             p.Controls.Add(Lbl("Server Presets", TXT, 10, 10, FNTB));
-            p.Controls.Add(Lbl("recommended configs for los poderosos members", DIM, 10, 26, FNT));
+            p.Controls.Add(Lbl("recommended configs for los poderosisimos members", DIM, 10, 26, FNT));
             p.Controls.Add(HSep(10, 40, CW - 20));
 
             // Scrollable cards area
@@ -531,7 +555,6 @@ namespace lospoderosos_lite.UI
 
                 // Built-in tag (right-aligned using Paint to avoid label overlap)
                 if (pr.IsBuiltIn) {
-                    card.Controls.Add(Lbl("[recommended]", DIM, 10, 24, FNT));
                 }
 
                 // CPS — single combined label to prevent clipping
@@ -552,6 +575,11 @@ namespace lospoderosos_lite.UI
                     if (_sldrCps != null) { _sldrCps.Value = _cfg.AverageCps; _sldrCps.Invalidate(); }
                     if (_dRand   != null) { _dRand.SelectedIndex = _cfg.RandMode; }
                     SetTab(0); // Switch to LMB tab so user sees the changes
+                    if (_cfg.RandMode == 3) {
+                        using (var crf = new CustomRandForm(_cfg, _accentColor)) {
+                            crf.ShowDialog();
+                        }
+                    }
                 };
                 card.Controls.Add(btnLoad);
 
@@ -742,12 +770,12 @@ namespace lospoderosos_lite.UI
             bAbout.Controls.Add(Lbl("licensed to joacodemon", DIM, 10, 40, FNT));
             bAbout.Controls.Add(Lbl("• expiration date: never", DIM, 15, 60, FNT));
 
-            bAbout.Controls.Add(Lbl("about los poderosos", DIM, 10, 100, FNT));
-            bAbout.Controls.Add(Lbl("• build version: 2.2.7", DIM, 15, 120, FNT));
+            bAbout.Controls.Add(Lbl("about los poderosisimos", DIM, 10, 100, FNT));
+            bAbout.Controls.Add(Lbl("• build version: 3.0.0", DIM, 15, 120, FNT));
             bAbout.Controls.Add(Lbl("• build type: faction", DIM, 15, 140, FNT));
 
             bAbout.Controls.Add(HSep(10, 200, 270));
-            var lblCC = Lbl("los poderosos © 2026", TXT, 0, 220, FNT);
+            var lblCC = Lbl("los poderosisimos © 2026", TXT, 0, 220, FNT);
             lblCC.Location = new Point((290 - lblCC.Width) / 2, 220);
             bAbout.Controls.Add(lblCC);
             var lblRights = Lbl("all rights reserved", DIM, 0, 240, FNT);
@@ -811,6 +839,48 @@ namespace lospoderosos_lite.UI
             return new FlatButton(t, fg) { Size = new Size(w, h), Location = new Point(x, y) };
         }
 
+        private void UpdateCustomBar(Point pt, Panel panel)
+        {
+            int numBars = 25;
+            float barWidth = (panel.Width - 40) / (float)numBars;
+            float maxH = panel.Height - 40;
+            int index = (int)((pt.X - 20) / barWidth);
+            if (index >= 0 && index < numBars)
+            {
+                float y = pt.Y;
+                float h = panel.Height - 20 - y;
+                double weight = h / maxH;
+                weight = Math.Max(0, Math.Min(1, weight));
+                _cfg.CustomCpsWeights[index] = weight;
+                panel.Invalidate();
+            }
+        }
+
+        private void UpdateCustomStats()
+        {
+            double sum = 0, exp = 0;
+            for (int i = 0; i < 25; i++)
+            {
+                sum += _cfg.CustomCpsWeights[i];
+                exp += (i + 1) * _cfg.CustomCpsWeights[i];
+            }
+            if (sum > 0)
+            {
+                double avg = exp / sum;
+                double var = 0;
+                for (int i = 0; i < 25; i++)
+                {
+                    double p = _cfg.CustomCpsWeights[i] / sum;
+                    var += p * Math.Pow((i + 1) - avg, 2);
+                }
+                _customStats.Text = string.Format("Statistics:\nAverage CPS: {0:F2}\nVariance: {1:F2}\nTotal Weight: {2:F2}", avg, var, sum);
+            }
+            else
+            {
+                _customStats.Text = "Statistics:\nAverage CPS: 0.00\nVariance: 0.00\nTotal Weight: 0.00";
+            }
+        }
+
         void SetTab(int t)
         {
             _tab = t;
@@ -842,9 +912,73 @@ namespace lospoderosos_lite.UI
                 b.FlatAppearance.BorderSize  = 0;
             }
         }
+
+        private void DrawCustomChart(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            int numBars = 25;
+            float barWidth = ((Panel)sender).Width - 40;
+            barWidth /= numBars;
+            float maxH = ((Panel)sender).Height - 40;
+
+            for (int i = 0; i < numBars; i++)
+            {
+                float x = 20 + i * barWidth;
+                float w = barWidth - 4;
+                double weight = _cfg.CustomCpsWeights[i];
+                float h = (float)(weight * maxH);
+                if (h > maxH) h = maxH;
+                if (h < 0) h = 0;
+                float y = ((Panel)sender).Height - 20 - h;
+
+                using (Brush b = new SolidBrush(Color.FromArgb(40, 40, 40)))
+                    g.FillRectangle(b, x, 20, w, maxH);
+                using (Brush b = new SolidBrush(weight > 0 ? _accentColor : DIM))
+                    g.FillRectangle(b, x, y, w, h);
+                SizeF sz = g.MeasureString((i + 1).ToString(), FNT);
+                using (Brush b = new SolidBrush(DIM))
+                    g.DrawString((i + 1).ToString(), FNT, b, x + (w - sz.Width) / 2, ((Panel)sender).Height - 18);
+                if (weight > 0)
+                {
+                    string txt = weight.ToString("0.00");
+                    SizeF tsz = g.MeasureString(txt, new Font("Courier New", 6F));
+                    using (Brush b = new SolidBrush(TXT))
+                        g.DrawString(txt, new Font("Courier New", 6F), b, x + (w - tsz.Width) / 2, y - 10);
+                }
+            }
+        }
+
         void Drag(object s, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left) { Win32.ReleaseCapture(); Win32.SendMessage(Handle, 0xA1, 2, 0); }
+        }
+        // Mouse interaction handlers for custom chart
+        private void CustomChartMouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                _isDragging = true;
+                UpdateCustomBar(e.Location, (Panel)sender);
+            }
+        }
+
+        private void CustomChartMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_isDragging)
+            {
+                UpdateCustomBar(e.Location, (Panel)sender);
+            }
+        }
+
+        private void CustomChartMouseUp(object sender, MouseEventArgs e)
+        {
+            if (_isDragging)
+            {
+                _isDragging = false;
+                UpdateCustomStats();
+            }
         }
 
         // ── Thread-safe UI updates ────────────────────────────────────────────

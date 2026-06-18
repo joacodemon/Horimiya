@@ -3,7 +3,6 @@ using System.Text;
 using System.Threading.Tasks;
 using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Client.Options;
 using lospoderosos_lite.Config;
 
 namespace lospoderosos_lite.IoT
@@ -11,7 +10,7 @@ namespace lospoderosos_lite.IoT
     public class IoTManager : IDisposable
     {
         private readonly IMqttClient _client;
-        private readonly IMqttClientOptions _options;
+        private readonly MqttClientOptions _options;
         private readonly MqttSettings _settings;
 
         public event EventHandler<string>? MessageReceived;
@@ -21,11 +20,13 @@ namespace lospoderosos_lite.IoT
             _settings = config.Mqtt ?? new MqttSettings();
             var factory = new MqttFactory();
             _client = factory.CreateMqttClient();
-            _client.UseApplicationMessageReceivedHandler(e =>
+            
+            _client.ApplicationMessageReceivedAsync += e =>
             {
                 var payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload ?? Array.Empty<byte>());
                 MessageReceived?.Invoke(this, payload);
-            });
+                return Task.CompletedTask;
+            };
 
             var builder = new MqttClientOptionsBuilder()
                 .WithTcpServer(_settings.Host, _settings.Port);
@@ -42,10 +43,13 @@ namespace lospoderosos_lite.IoT
         public async Task StartAsync()
         {
             await _client.ConnectAsync(_options);
-            await _client.SubscribeAsync(new MqttTopicFilterBuilder()
-                .WithTopic(_settings.SubscribeTopic)
-                .WithExactlyOnceQoS()
-                .Build());
+            var factory = new MqttFactory();
+            var subOptions = factory.CreateSubscribeOptionsBuilder()
+                .WithTopicFilter(f => {
+                    f.WithTopic(_settings.SubscribeTopic);
+                })
+                .Build();
+            await _client.SubscribeAsync(subOptions);
         }
 
         public async Task PublishAsync(string payload)
@@ -53,7 +57,7 @@ namespace lospoderosos_lite.IoT
             var message = new MqttApplicationMessageBuilder()
                 .WithTopic(_settings.PublishTopic)
                 .WithPayload(payload)
-                .WithExactlyOnceQoS()
+                .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.ExactlyOnce)
                 .Build();
             await _client.PublishAsync(message);
         }

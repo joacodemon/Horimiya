@@ -21,10 +21,8 @@ namespace lospoderosos_lite
                 // Initialize Configuration
                 var cfg = new AppConfig();
 
-                // Show Login Screen first
-                var login = new LoginForm();
-                if (login.ShowDialog() != DialogResult.OK)
-                    return;
+                // Login bypassed for the new version – no password required
+                // (Login screen removed)
 
                 // Show Splash Screen
                 var splash = new SplashForm();

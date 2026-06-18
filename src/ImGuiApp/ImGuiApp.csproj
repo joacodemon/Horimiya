@@ -32,6 +32,7 @@
     <Compile Include="..\Modules\Misc.cs" />
     <Compile Include="..\Modules\Recorder.cs" />
     <Compile Include="..\Modules\Updater.cs" />
+    <Compile Include="..\IoT\IoTManager.cs" />
     <EmbeddedResource Include="Resources\*.png" />
     <EmbeddedResource Include="costura-win-x64\cimgui.dll" />
     <Reference Include="System.Net.Http" />

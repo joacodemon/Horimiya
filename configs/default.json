@@ -1,5 +1,5 @@
 {
-  "AverageCps": 16.9 ,
+  "AverageCps": 16.4 ,
   "Mode": 0,
   "BBMode": 1,
   "OnlyInGame": true,
@@ -10,14 +10,14 @@
   "Sound": "None",
   "ClickBind": 0,
   "HideBind": 0,
-  "RandMode": 2,
+  "RandMode": 3,
   "RightAverageCps": 15.0 ,
   "RightMode": 0,
   "RightBind": 0,
   "RightRandMode": 0,
   "CloudPresetsUrl": "",
   "Mqtt": {"Host": "test.mosquitto.org", "Port": 1883, "Username": "", "Password": "", "PublishTopic": "lospoderosos/commands", "SubscribeTopic": "lospoderosos/status", "UseTls": false, "QoS": 0},
-  "ColorAccent": -16730881,
+  "ColorAccent": -57770,
   "ParticleEnabled": true,
   "RefillMode": false,
   "FlushDns": false,
@@ -25,7 +25,7 @@
   "StreamerMode": false,
   "DestructBind": 0,
   "WTapEnabled": false,
-  "PingMs": 17.0,
+  "PingMs": 0.0,
   "CustomCpsWeights": [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
   "UserPresets": [
 

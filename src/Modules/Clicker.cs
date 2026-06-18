@@ -419,8 +419,10 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(3, 6);
+                int holdTime = _rng.Next(2, 5);
                 long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
+                if (_cfg.PingMs > 0)
+                    holdTime += (int)Math.Ceiling(_cfg.PingMs / 2.0); // add half ping (ms) to hold time for server latency compensation
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {

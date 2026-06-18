@@ -1,17 +1,17 @@
-using System;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.IO;
-using System.Reflection;
-using System.Windows.Forms;
-// OpenTK using directives removed (not available)
+                            using System;
+                            using System.Drawing;
+                            using System.Drawing.Drawing2D;
+                            using System.IO;
+                            using System.Reflection;
+                            using System.Windows.Forms;
+                            // OpenTK using directives removed (not available)
 
-namespace lospoderosos_lite.UI
-{
-    public class SplashForm : Form
-    {
-        private System.Windows.Forms.Timer _timer;
-        private float _opacity = 0f;
+                            namespace lospoderosos_lite.UI
+                            {
+                                public class SplashForm : Form
+                                {
+                                    private System.Windows.Forms.Timer _timer;
+                                    private float _opacity = 0f;
         private int _phase = 0; // 0=fade in, 1=hold, 2=fade out
         private int _holdTicks = 0;
         private Image _logo;
@@ -117,7 +117,7 @@ namespace lospoderosos_lite.UI
             }
 
             // Title
-            string title = "los poderosos";
+            string title = "los poderosisimos";
             var titleSize = g.MeasureString(title, FNTBIG);
             using (var b = new SolidBrush(Color.FromArgb(240, 240, 240)))
                 g.DrawString(title, FNTBIG, b, (Width - titleSize.Width) / 2, 185);
