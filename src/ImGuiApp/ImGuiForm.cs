@@ -45,6 +45,7 @@ public class ImGuiForm : Form
     private int _presetAddRand = 2;
     private string _recorderStatus = "Status: Idle | Events: 0";
     private float[] _customCpsWeightsFloat = new float[25];
+    private float[] _presetAddCustomCpsWeightsFloat = new float[25];
 
     private Stopwatch _frameSw = Stopwatch.StartNew();
     private volatile bool _disposed = false;
@@ -368,7 +369,7 @@ public class ImGuiForm : Form
         float t = v ? 1.0f : 0.0f;
 
         // Background color
-        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.3f, 0.3f, 0.3f, 1f) : new Vector4(0.12f, 0.12f, 0.12f, 1f));
+        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.0f, 0.8f, 0.0f, 1f) : new Vector4(0.8f, 0.0f, 0.0f, 1f));
         draw_list.AddRectFilled(p, new Vector2(p.X + width, p.Y + height), col_bg, radius);
 
         // Circle color
@@ -420,6 +421,7 @@ public class ImGuiForm : Form
 
         if (_cfg.RandMode == 3)
         {
+            ImGui.SetNextItemOpen(true, ImGuiCond.Appearing);
             if (ImGui.TreeNode("Edit Custom Randomization"))
             {
                 for (int i = 0; i < 25; i++)
@@ -444,15 +446,7 @@ public class ImGuiForm : Form
 
         ImGui.Dummy(new Vector2(0, 10));
 
-        float ping = (float)_cfg.PingMs;
-        ImGui.SetNextItemWidth(350);
-        if (ImGui.SliderFloat("Ping (ms)", ref ping, 0f, 200f, "%.0f"))
-            _cfg.PingMs = ping;
-        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
         
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.5f, 0.5f, 0.5f, 1f));
-        ImGui.TextWrapped("Manual latency adjusts pacing smoothness only.");
-        ImGui.PopStyleColor();
         
         ImGui.Dummy(new Vector2(0, 10));
         if (ImGui.TreeNode("Advanced Logic"))
@@ -644,34 +638,40 @@ public class ImGuiForm : Form
         {
             if (!string.IsNullOrWhiteSpace(_presetAddName))
             {
-                _cfg.Presets.Add(new PresetConfig { 
+                var newPreset = new PresetConfig { 
                     Name = _presetAddName, 
                     Server = _presetAddName, 
                     Cps = _presetAddCps, 
                     RandMode = _presetAddRand, 
                     IsBuiltIn = false 
-                });
+                };
+                if (_presetAddRand == 3)
+                {
+                    newPreset.CustomCpsWeights = new double[25];
+                    for(int i = 0; i < 25; i++) newPreset.CustomCpsWeights[i] = _presetAddCustomCpsWeightsFloat[i];
+                }
+                _cfg.Presets.Add(newPreset);
+            }
+        }
+
+        if (_presetAddRand == 3)
+        {
+            ImGui.SetNextItemOpen(true, ImGuiCond.Appearing);
+            if (ImGui.TreeNode("Edit Custom Randomization##Preset"))
+            {
+                for (int i = 0; i < 25; i++)
+                {
+                    ImGui.SetNextItemWidth(150);
+                    ImGui.SliderFloat($"CPS {i+1}##Preset", ref _presetAddCustomCpsWeightsFloat[i], 0f, 100f, "%.1f");
+                    if (i % 2 == 0 && i < 24) ImGui.SameLine();
+                }
+                ImGui.TreePop();
             }
         }
 
         ImGui.Separator();
 
-        if (ImGui.Button("Share Current Config"))
-        {
-            var p = new PresetConfig { Name = _presetAddName, Server = _presetAddName, Cps = _cfg.AverageCps, RandMode = _cfg.RandMode, IsBuiltIn = false };
-            if (_cfg.RandMode == 3)
-            {
-                p.CustomCpsWeights = new double[25];
-                Array.Copy(_cfg.CustomCpsWeights, p.CustomCpsWeights, 25);
-            }
-            string json = "{\"UserPresets\":[{\"Name\":\"" + p.Name + "\",\"Server\":\"" + p.Server + "\",\"Cps\":" + p.Cps.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"RandMode\":" + p.RandMode;
-            if (p.RandMode == 3)
-            {
-                json += ",\"CustomCpsWeights\":[" + string.Join(",", p.CustomCpsWeights) + "]";
-            }
-            json += "}]}";
-            _ = _iot.PublishAsync(json);
-        }
+        // Share Current Config removed
         
         ImGui.BeginChild("presets_list");
         for (int i = 0; i < _cfg.Presets.Count; i++)

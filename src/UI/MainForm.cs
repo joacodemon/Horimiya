@@ -332,8 +332,8 @@ namespace lospoderosos_lite.UI
             var lft = Box(10, 40, LW, BH);
 
             // Row 1
-            _chkTgl = new FlatCheck("Toggle", false) { Location = new Point(8, 10), Width = 65 };
-            _chkTgl.Click += (s,e) => _clicker.Clicking = _chkTgl.Checked;
+            _chkTgl = new FlatCheck("Toggle", false) { Location = new Point(8, 10), Width = 65, BackColor = Color.FromArgb(200, 0, 0) };
+        _chkTgl.Click += (s,e) => { _clicker.Clicking = _chkTgl.Checked; _chkTgl.BackColor = _chkTgl.Checked ? Color.FromArgb(0, 200, 0) : Color.FromArgb(200, 0, 0); };
 
             _btnBind = BoxBtn("Bind: none", TXT, 78, 8, 90, 22);
             _btnBind.Click += (s,e) => BeginBind(false);
@@ -771,7 +771,7 @@ namespace lospoderosos_lite.UI
             bAbout.Controls.Add(Lbl("• expiration date: never", DIM, 15, 60, FNT));
 
             bAbout.Controls.Add(Lbl("about los poderosisimos", DIM, 10, 100, FNT));
-            bAbout.Controls.Add(Lbl("• build version: 3.0.0", DIM, 15, 120, FNT));
+            bAbout.Controls.Add(Lbl("• build version: 2.2.8", DIM, 15, 120, FNT));
             bAbout.Controls.Add(Lbl("• build type: faction", DIM, 15, 140, FNT));
 
             bAbout.Controls.Add(HSep(10, 200, 270));

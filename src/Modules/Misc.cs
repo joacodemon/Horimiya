@@ -62,7 +62,9 @@ namespace lospoderosos_lite.Modules
                     FileName = "cmd.exe",
                     Arguments = "/c color a & echo Optimizando sistema para Los Poderosisimos... & powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c & ipconfig /flushdns & netsh int tcp set global autotuninglevel=normal & netsh int tcp set global congestionprovider=ctcp & echo. & echo ================================= & echo Optimizacion P+ Completada al 100%%! & echo ================================= & pause",
                     CreateNoWindow = false,
-                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
+                    UseShellExecute = true,
+                    Verb = "runas"
                 };
                 System.Diagnostics.Process.Start(psi);
             }
