@@ -98,7 +98,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
             // which manifests as crosshair teleporting and irregular click timing
             Win32.timeBeginPeriod(1);
 
-            _thread = new Thread(ClickLoop) { IsBackground = true, Priority = ThreadPriority.AboveNormal };
+            _thread = new Thread(ClickLoop) { IsBackground = true, Priority = ThreadPriority.Highest };
             _thread.Start();
 
             // Start background sound thread
@@ -268,20 +268,22 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 // ----- Fin de versión estabilizada -----
                 }
 
-                // ── Ping / Latency Compensation ──
-                // When ping > 0, we pre-shift click timing to account for network delay:
-                // 1. Reduce inter-click delay slightly so clicks arrive at the server faster
-                // 2. Extend hold time so the server sees the click for a longer window
-                // This compensates for the round-trip latency, making hits register better
+                // ── Ping / Latency Compensation (Adaptive) ──
+                // El usuario pidió que sin importar el ping (aún con 200ms),
+                // si setea 16.7 CPS, el clicker DEBE tirar entre 16 y 17 CPS exactos.
+                // Por lo tanto, NO reducimos el target CPS.
+                // La optimización para ping alto ahora recae 100% en el "Hold Time" (abajo),
+                // donde mantenemos el click presionado por más milisegundos para que 
+                // el servidor no lo descarte por culpa de la latencia, pero manteniendo la cadencia.
+                
                 double pingMs = _cfg.PingMs;
                 if (pingMs > 0)
                 {
-                    // Reduce delay by a fraction of the ping (one-way latency = ping/2)
-                    // We subtract ~15% of one-way latency from the click interval
-                    // This clusters clicks slightly tighter, compensating for network jitter
-                    double oneWayMs = pingMs * 0.5;
-                    double delayReduction = oneWayMs * 0.15;
-                    delayMs -= delayReduction;
+                    double pingFactor = Math.Min(1.0, pingMs / 200.0);
+                    // Solo absorbemos un jitter muy leve de red que promedia a 0,
+                    // así que no baja ni sube los CPS promedio.
+                    double jitterAbsorb = (_rng.NextDouble() * 2.0 - 1.0) * pingFactor * 0.5;
+                    delayMs += jitterAbsorb;
                 }
 
                 delayMs = Math.Max(3.0, delayMs);
@@ -366,9 +368,14 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     if (!Clicking || !_running) break;
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
-                    if (leftMs > 2.0)       Thread.Sleep(1);
-                    else if (leftMs > 0.1)  Thread.Sleep(0);
-                    else                    Thread.SpinWait(10);
+                    
+                    // To prevent XClient's Aim Assist from stealing our CPU time slice,
+                    // we avoid Sleep(0) and only Sleep(1) if we have plenty of time.
+                    // Otherwise, we do an aggressive SpinWait to maintain precise CPS.
+                    if (leftMs > 3.0)       
+                        Thread.Sleep(1);
+                    else                    
+                        Thread.SpinWait(20);
                 }
 
                 // Update Live Stats

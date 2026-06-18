@@ -60,27 +60,27 @@ internal static class Program
             AllocConsole();
             IntPtr consoleHwnd = GetConsoleWindow();
             
-            Console.Title = "Los Poderosos - Authenticating";
+            Console.Title = "Los Poderosisimos - Authenticating";
             Console.CursorVisible = false;
             
             // Render ASCII
             Console.ForegroundColor = ConsoleColor.DarkBlue;
             Console.WriteLine("");
-            Console.WriteLine(@"    __                               __                         ");
-            Console.WriteLine(@"   / /___  _________  ____  ____  __/ /__  _________  _________  _____");
-            Console.WriteLine(@"  / / __ \/ ___/ __ \/ __ \/ __ \/ __  / _ \/ ___/ __ \/ ___/ __ \/ ___/");
-            Console.WriteLine(@" / / /_/ (__  ) /_/ / /_/ / /_/ / /_/ /  __/ /  / /_/ (__  ) /_/ (__  ) ");
-            Console.WriteLine(@"/_/\____/____/ .___/\____/\____/\__,_/\___/_/   \____/____/\____/____/  ");
-            Console.WriteLine(@"            /_/                                                 ");
+            Console.WriteLine(@"    __                                       _      _      _                    ");
+            Console.WriteLine(@"   / /  ___  ___   _ __   ___   __| |  ___  _ __ ___  ___ (_) ___ (_) _ __ ___   ___  ___       ");
+            Console.WriteLine(@"  / /  / _ \/ __| | '_ \ / _ \ / _` | / _ \| '__|/ _ \/ __|| |/ __|| || '_ ` _ \ / _ \/ __|      ");
+            Console.WriteLine(@" / /__| (_) \__ \ | |_) | (_) | (_| ||  __/| |  | (_) \__ \| |\__ \| || | | | | | (_) \__ \      ");
+            Console.WriteLine(@" \____/\___/|___/ | .__/ \___/ \__,_| \___||_|   \___/|___/|_||___/|_||_| |_| |_|\___/|___/      ");
+            Console.WriteLine(@"                  |_|                                                                          ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.7\n\n");
+            Console.WriteLine("                                           2.2.8\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.7");
+            Updater.CheckForUpdates("2.2.8");
             Console.WriteLine("");
             
             int totalBlocks = 30;
