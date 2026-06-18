@@ -225,7 +225,6 @@ namespace lospoderosos_lite.Modules
                     double oneWayMs = pingMs * 0.5;
                     double delayReduction = oneWayMs * 0.15;
                     delayMs -= delayReduction;
-                    delayMs += (_rng.NextDouble() * pingMs * 0.02 - pingMs * 0.01);
                 }
 
                 delayMs = Math.Max(3.0, delayMs);

@@ -340,7 +340,10 @@ public class ImGuiForm : Form
         if (ImGui.SliderFloat("Ping (ms)", ref ping, 0f, 200f, "%.0f"))
             _cfg.PingMs = ping;
         if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
-
+        
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+        ImGui.TextWrapped("Manual latency adjusts pacing smoothness only.");
+        ImGui.PopStyleColor();
 
         ImGui.NextColumn();
 
@@ -755,31 +758,66 @@ public class ImGuiForm : Form
     }
     private void DrawLiveStats(double liveCps, double avgCps, double interval, double jitter, double last, int late, double worstLate, int samples)
     {
-        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.8f, 0.8f, 0.8f, 1f));
-        ImGui.Text("Live");
-        ImGui.SetWindowFontScale(1.8f);
-        ImGui.Text($"{liveCps:F1}");
-        ImGui.SetWindowFontScale(1.0f);
-        ImGui.PopStyleColor();
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Average: {avgCps:F1}");
-        ImGui.Separator();
+        // Draw a child window with a border and dark background so it's not transparent over the image
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.08f, 0.08f, 0.08f, 0.95f));
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 8.0f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(15, 15));
         
-        ImGui.Text("Stability");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Interval: {interval:F2} ms   Jitter: {jitter:F2} ms");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Last: {last:F2} ms   Late: {late}");
-        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), $"Worst late: {worstLate:F2} ms   Samples: {samples}");
-        
-        bool isStable = jitter < 2.0;
-        if (samples > 0)
+        // Let it fill the remaining space or have a fixed height
+        if (ImGui.BeginChild("LiveStatsPanel", new Vector2(0, 0), true, ImGuiWindowFlags.AlwaysUseWindowPadding))
         {
-            if (isStable)
-                ImGui.TextColored(new Vector4(0.2f, 0.8f, 0.4f, 1f), "Stable");
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
+            ImGui.Text("Live");
+            ImGui.Separator();
+            
+            ImGui.SetWindowFontScale(2.5f);
+            ImGui.Text($"{liveCps:F1}");
+            ImGui.SetWindowFontScale(1.0f);
+            
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"Average: {avgCps:F1}");
+            ImGui.PopStyleColor(); // white text
+
+            ImGui.Dummy(new Vector2(0, 10)); // spacing
+
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 1f, 1f, 1f));
+            ImGui.Text("Stability");
+            ImGui.Separator();
+            ImGui.PopStyleColor();
+
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"Interval: {interval:F2} ms   Jitter: {jitter:F2} ms");
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"Last: {last:F2} ms   Late: {late}");
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1f), $"Worst late: {worstLate:F2} ms   Samples: {samples}");
+            
+            ImGui.Dummy(new Vector2(0, 10)); // spacing
+
+            bool isStable = jitter < 2.0;
+            if (samples > 0)
+            {
+                if (isStable)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.1f, 0.4f, 0.2f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.1f, 0.4f, 0.2f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.1f, 0.4f, 0.2f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.4f, 0.9f, 0.5f, 1f));
+                    ImGui.Button("Stable", new Vector2(80, 25));
+                }
+                else
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.4f, 0.1f, 0.1f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.4f, 0.1f, 0.1f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.4f, 0.1f, 0.1f, 0.8f));
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.9f, 0.4f, 0.4f, 1f));
+                    ImGui.Button("Unstable", new Vector2(80, 25));
+                }
+                ImGui.PopStyleColor(4);
+            }
             else
-                ImGui.TextColored(new Vector4(0.8f, 0.2f, 0.2f, 1f), "Unstable");
+            {
+                ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Waiting for clicks...");
+            }
         }
-        else
-        {
-            ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Waiting for clicks...");
-        }
+        ImGui.EndChild();
+        ImGui.PopStyleVar(2);
+        ImGui.PopStyleColor();
     }
 }
