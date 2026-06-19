@@ -47,7 +47,7 @@ public class ImGuiForm : Form
     private float[] _customCpsWeightsFloat = new float[25];
     private float[] _presetAddCustomCpsWeightsFloat = new float[25];
 
-    private lospoderosos_lite.UI.NotificationOverlay _notifyOverlay;
+
 
     private Stopwatch _frameSw = Stopwatch.StartNew();
     private volatile bool _disposed = false;
@@ -87,8 +87,6 @@ public class ImGuiForm : Form
         _glControl.Dock = DockStyle.Fill;
         Controls.Add(_glControl);
 
-        _notifyOverlay = new lospoderosos_lite.UI.NotificationOverlay();
-        _notifyOverlay.Show(this);
 
         _bindTimer = new System.Windows.Forms.Timer { Interval = 20 };
         _bindTimer.Tick += BindTick;
@@ -96,11 +94,11 @@ public class ImGuiForm : Form
         _recorder.StatusChanged += s => { _recorderStatus = s; };
         _misc.ClickBindTriggered += () => { 
             _clicker.Clicking = !_clicker.Clicking; 
-            _notifyOverlay.ShowNotification("Left Clicker " + (_clicker.Clicking ? "ON" : "OFF"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
+            lospoderosos_lite.UI.NotificationOverlay.Show("lospoderosisimos", "Left Clicker has been " + (_clicker.Clicking ? "toggled" : "disabled"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error, _cfg.NotificationPosition);
         };
         _misc.RightClickBindTriggered += () => { 
             _rightClicker.Clicking = !_rightClicker.Clicking; 
-            _notifyOverlay.ShowNotification("Right Clicker " + (_rightClicker.Clicking ? "ON" : "OFF"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
+            lospoderosos_lite.UI.NotificationOverlay.Show("lospoderosisimos", "Right Clicker has been " + (_rightClicker.Clicking ? "toggled" : "disabled"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error, _cfg.NotificationPosition);
         };
         _misc.HideBindTriggered += () => { 
             if (Visible) Hide(); 
@@ -356,13 +354,15 @@ public class ImGuiForm : Form
         return clicked;
     }
 
+    private Dictionary<uint, float> _toggleAnimations = new Dictionary<uint, float>();
+
     private bool DrawToggle(string label, ref bool v)
     {
         Vector2 p = ImGui.GetCursorScreenPos();
         var draw_list = ImGui.GetWindowDrawList();
 
-        float height = 20.0f;
-        float width = 42.0f;
+        float height = 18.0f;
+        float width = 34.0f;
         float radius = height * 0.5f;
 
         ImGui.InvisibleButton(label, new Vector2(width, height));
@@ -373,16 +373,61 @@ public class ImGuiForm : Form
             clicked = true;
         }
 
-        float t = v ? 1.0f : 0.0f;
+        bool hovered = ImGui.IsItemHovered();
 
-        // Background color (vibrant Green / Red)
-        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.0f, 0.85f, 0.0f, 1f) : new Vector4(0.85f, 0.0f, 0.0f, 1f));
+        uint id = ImGui.GetID(label);
+        float targetT = v ? 1.0f : 0.0f;
+        
+        if (!_toggleAnimations.ContainsKey(id)) _toggleAnimations[id] = targetT;
+        float animT = _toggleAnimations[id];
+        
+        float delta = ImGui.GetIO().DeltaTime;
+        float speed = 12.0f;
+        if (animT != targetT)
+        {
+            animT += (targetT > animT ? 1 : -1) * speed * delta;
+            if (targetT > 0 && animT > targetT) animT = targetT;
+            if (targetT == 0 && animT < targetT) animT = targetT;
+            _toggleAnimations[id] = animT;
+        }
+
+        // Colors
+        float offR = hovered ? 0.25f : 0.20f;
+        float offG = hovered ? 0.25f : 0.20f;
+        float offB = hovered ? 0.25f : 0.20f;
+
+        float onR = hovered ? 1.00f : 1.00f;
+        float onG = hovered ? 0.22f : 0.12f;
+        float onB = hovered ? 0.44f : 0.34f;
+
+        float currR = offR + (onR - offR) * animT;
+        float currG = offG + (onG - offG) * animT;
+        float currB = offB + (onB - offB) * animT;
+
+        uint col_bg = ImGui.GetColorU32(new Vector4(currR, currG, currB, 1f));
+        
+        // Background
         draw_list.AddRectFilled(p, new Vector2(p.X + width, p.Y + height), col_bg, radius);
 
-        // Circle color
-        uint col_circle = ImGui.GetColorU32(new Vector4(0.9f, 0.9f, 0.9f, 1f));
-        float circle_x = p.X + radius + t * (width - radius * 2.0f);
-        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius), radius - 1.5f, col_circle);
+        // Draw border for the OFF state to make it look nicer
+        if (animT < 1.0f)
+        {
+            uint col_border = ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1f - animT));
+            draw_list.AddRect(p, new Vector2(p.X + width, p.Y + height), col_border, radius, ImDrawFlags.None, 1.0f);
+        }
+
+        // Circle
+        uint col_circle = ImGui.GetColorU32(new Vector4(0.95f, 0.95f, 0.95f, 1f));
+        float circle_radius = radius - 2.5f;
+        float circle_x_off = p.X + radius;
+        float circle_x_on = p.X + width - radius;
+        float circle_x = circle_x_off + (circle_x_on - circle_x_off) * animT;
+        
+        // Circle drop shadow
+        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius + 0.5f), circle_radius, ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.3f)));
+        
+        // Actual circle
+        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius), circle_radius, col_circle);
 
         ImGui.SameLine();
         string displayLabel = label;
@@ -413,7 +458,7 @@ public class ImGuiForm : Form
         if (DrawToggle("Enabled##LMB", ref clicking))
         {
             _clicker.Clicking = clicking;
-            _notifyOverlay.ShowNotification("Left Clicker " + (_clicker.Clicking ? "ON" : "OFF"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
+            lospoderosos_lite.UI.NotificationOverlay.Show("lospoderosisimos", "Left Clicker has been " + (_clicker.Clicking ? "toggled" : "disabled"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error, _cfg.NotificationPosition);
         }
 
         ImGui.Dummy(new Vector2(0, 15));
@@ -510,7 +555,7 @@ public class ImGuiForm : Form
         if (DrawToggle("Enabled##RMB", ref clicking))
         {
             _rightClicker.Clicking = clicking;
-            _notifyOverlay.ShowNotification("Right Clicker " + (_rightClicker.Clicking ? "ON" : "OFF"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
+            lospoderosos_lite.UI.NotificationOverlay.Show("lospoderosisimos", "Right Clicker has been " + (_rightClicker.Clicking ? "toggled" : "disabled"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error, _cfg.NotificationPosition);
         }
 
         ImGui.Dummy(new Vector2(0, 15));
@@ -871,6 +916,7 @@ public class ImGuiForm : Form
 
     private void OnFormClosing(object sender, FormClosingEventArgs e)
     {
+        _cfg.Save();
         Application.Idle -= RenderLoop;
 
         _bindTimer.Stop();
