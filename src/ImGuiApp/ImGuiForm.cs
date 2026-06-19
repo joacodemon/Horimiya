@@ -848,9 +848,11 @@ public class ImGuiForm : Form
         _bindTimer.Start();
     }
 
+    private int _pressedKey = 0;
+
     private void BindTick(object s, EventArgs e)
     {
-        if (!_bindMode) { _bindTimer.Stop(); return; }
+        if (!_bindMode) { _bindTimer.Stop(); _pressedKey = 0; return; }
 
         if (_waitRelease)
         {
@@ -864,22 +866,33 @@ public class ImGuiForm : Form
             return;
         }
 
-        int[] mouseButtons = { 5, 6, 4, 2, 1 };
-        foreach (int mb in mouseButtons)
+        if (_pressedKey == 0)
         {
-            if ((Win32.GetAsyncKeyState(mb) & 0x8000) != 0)
+            int[] mouseButtons = { 5, 6, 4, 2, 1 };
+            foreach (int mb in mouseButtons)
             {
-                FinishBind(mb);
-                return;
+                if ((Win32.GetAsyncKeyState(mb) & 0x8000) != 0)
+                {
+                    _pressedKey = mb;
+                    return;
+                }
+            }
+
+            for (int i = 8; i < 256; i++)
+            {
+                if ((Win32.GetAsyncKeyState(i) & 0x8000) != 0)
+                {
+                    _pressedKey = i;
+                    return;
+                }
             }
         }
-
-        for (int i = 8; i < 256; i++)
+        else
         {
-            if ((Win32.GetAsyncKeyState(i) & 0x8000) != 0)
+            if ((Win32.GetAsyncKeyState(_pressedKey) & 0x8000) == 0)
             {
-                FinishBind(i);
-                return;
+                FinishBind(_pressedKey);
+                _pressedKey = 0;
             }
         }
     }

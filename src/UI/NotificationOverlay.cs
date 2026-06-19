@@ -101,15 +101,7 @@ namespace lospoderosos_lite.UI
             _activeNotifications.Add(overlay);
             overlay.Show();
             
-            // Attach to the current foreground window
-            IntPtr fgWindow = GetForegroundWindow();
-            if (fgWindow != IntPtr.Zero && fgWindow != overlay.Handle)
-            {
-                if (IntPtr.Size == 8)
-                    SetWindowLongPtr(overlay.Handle, GWL_HWNDPARENT, fgWindow);
-                else
-                    SetWindowLong(overlay.Handle, GWL_HWNDPARENT, fgWindow.ToInt32());
-            }
+            // No longer attaching to foreground window to prevent minimizing exclusive fullscreen apps.
 
             overlay._targetOpacity = 0.95;
             RecalculatePositions();
