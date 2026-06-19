@@ -238,20 +238,24 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // ── Perform the click ──
-                if (isButterfly)
+                Point dummyPoint;
+                if (!cursorShown || Win32.IsCursorInClientArea(Win32.GetForegroundWindow(), out dummyPoint))
                 {
-                    PerformClick(cursorShown);
-                    PlayClickSound();
-                    Thread.SpinWait(50);
-                    int microGap = _rng.Next(10, 35);
-                    Thread.Sleep(microGap);
-                    PerformClick(cursorShown);
-                    PlayClickSound();
-                }
-                else
-                {
-                    PerformClick(cursorShown);
-                    PlayClickSound();
+                    if (isButterfly)
+                    {
+                        PerformClick(cursorShown);
+                        PlayClickSound();
+                        Thread.SpinWait(50);
+                        int microGap = _rng.Next(10, 35);
+                        Thread.Sleep(microGap);
+                        PerformClick(cursorShown);
+                        PlayClickSound();
+                    }
+                    else
+                    {
+                        PerformClick(cursorShown);
+                        PlayClickSound();
+                    }
                 }
 
                 while (sw.ElapsedTicks < nextClickTick)

@@ -1,1 +1,1 @@
-2.2.8|https://github.com/joacodemon/lospoderosos/releases/download/v2.2.8/los-poderosisimos-2.2.8.exe
+2.2.9|https://github.com/joacodemon/lospoderosos/releases/download/v2.2.9/los-poderosisimos-2.2.9.exe

@@ -771,7 +771,7 @@ namespace lospoderosos_lite.UI
             bAbout.Controls.Add(Lbl("• expiration date: never", DIM, 15, 60, FNT));
 
             bAbout.Controls.Add(Lbl("about los poderosisimos", DIM, 10, 100, FNT));
-            bAbout.Controls.Add(Lbl("• build version: 2.2.8", DIM, 15, 120, FNT));
+            bAbout.Controls.Add(Lbl("• build version: 2.2.9", DIM, 15, 120, FNT));
             bAbout.Controls.Add(Lbl("• build type: faction", DIM, 15, 140, FNT));
 
             bAbout.Controls.Add(HSep(10, 200, 270));

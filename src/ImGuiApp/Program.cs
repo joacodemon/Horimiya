@@ -25,6 +25,9 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // Setup Dependency Injection Container
+            var container = new DependencyContainer();
+
             // Initialize Configuration
             var cfg = new AppConfig();
 
@@ -40,11 +43,20 @@ internal static class Program
                 catch { }
             }
 
-            // Initialize Modules
-            var clicker = new Clicker(cfg);
-            var rightClicker = new RightClicker(cfg);
-            var recorder = new Recorder();
-            var misc = new Misc(cfg, clicker);
+            container.RegisterSingleton<AppConfig>(cfg);
+
+            // Initialize Modules using DI Container
+            var clicker = container.Resolve<Clicker>();
+            container.RegisterSingleton<Clicker>(clicker);
+
+            var rightClicker = container.Resolve<RightClicker>();
+            container.RegisterSingleton<RightClicker>(rightClicker);
+
+            var recorder = container.Resolve<Recorder>();
+            container.RegisterSingleton<Recorder>(recorder);
+
+            var misc = container.Resolve<Misc>();
+            container.RegisterSingleton<Misc>(misc);
 
             // Start Modules
             Win32.timeBeginPeriod(1); // Set Windows timer resolution to 1ms to fix Thread.Sleep lag
@@ -74,13 +86,13 @@ internal static class Program
             Console.WriteLine(@"                  |_|                                                                          ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.8\n\n");
+            Console.WriteLine("                                           2.2.9\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.8");
+            Updater.CheckForUpdates("2.2.9");
             Console.WriteLine("");
             
             int totalBlocks = 30;
@@ -101,8 +113,9 @@ internal static class Program
             
             FreeConsole();
 
-            // Run ImGui form
-            var form = new ImGuiForm(cfg, clicker, rightClicker, recorder, misc);
+            // Run ImGui form via DI
+            container.RegisterTransient<ImGuiForm>();
+            var form = container.Resolve<ImGuiForm>();
             Application.Run(form);
         }
         catch (Exception ex)

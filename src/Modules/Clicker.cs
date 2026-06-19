@@ -290,7 +290,11 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 long delayTicks = (long)(delayMs * Stopwatch.Frequency / 1000.0);
                 nextClickTick += delayTicks;
                 long currentTick = sw.ElapsedTicks;
-                if (nextClickTick < currentTick) nextClickTick = currentTick;
+                // Allow catching up from small delays to maintain average CPS.
+                // Only hard-reset if we've fallen more than 2 full intervals behind.
+                // This prevents CPS drops when aim assist causes brief CPU contention.
+                if (nextClickTick < currentTick - delayTicks * 2)
+                    nextClickTick = currentTick;
 
                 // ── Ejecutar el click ──
                 if (isButterfly)
@@ -320,9 +324,13 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     // recibe los clicks rápidos del autoclicker sin enterarse de la diferencia.
                     
                     IntPtr clickLParam = Win32.PostLeftDown(foregroundWnd);
-                    PlayClickSound();
+                    
+                    // Si el click no se envió (ej. está en la barra de título de la ventana), saltamos.
+                    if (clickLParam != IntPtr.Zero)
+                    {
+                        PlayClickSound();
 
-                    // W-Tap
+                        // W-Tap
                     if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                     {
                         if (_rng.NextDouble() < 0.45)
@@ -336,30 +344,25 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                         }
                     }
 
-                    // Hold time corto para PostMessage: el mensaje se encola directo en Minecraft,
-                    // no necesita hold largo. 2-4ms es suficiente para que el message pump
-                    // procese DOWN antes de recibir UP, sin robar tiempo del intervalo de CPS.
-                    // IMPORTANTE: Usamos un busy-loop con Stopwatch en vez de SpinWait.
-                    // SpinWait(20) se inflaba de 3-6ms a 10-15ms+ cuando XClient aim assist
-                    // estaba activo (contención de CPU), causando que los CPS bajaran a 12-17.
-                    int holdTime = _rng.Next(2, 5);
-                    // Ping compensation: extend hold time so the server has a wider
-                    // window to register the click despite network delay
+                    // Hold time: PostMessage encola directo en la ventana, 1-2ms basta.
+                    // SpinWait(1) en vez de busy-loop puro para reducir contención de CPU
+                    // cuando el aim assist está corriendo en paralelo.
+                    int holdTime = _rng.Next(1, 3);
                     if (pingMs > 0)
-                        holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05); // +~5% of one-way latency
+                        holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
-{
-    // Busy-loop puro: no cedemos CPU (ni Sleep ni SpinWait) para evitar que 
-    // el thread del aim-assist de XClient nos quite el timeslice y cause retardos.
-}
+                    {
+                        Thread.SpinWait(1);
+                    }
 
-                    // Recalcular posición del cursor para el UP.
-                    // Si XClient aim assist movió el cursor durante el hold,
-                    // usar la posición vieja del DOWN causaba que Minecraft
-                    // descartara el click (posición UP != posición DOWN).
-                    Win32.PostLeftUpFresh(foregroundWnd);
+                        // Recalcular posición del cursor para el UP.
+                        // Si XClient aim assist movió el cursor durante el hold,
+                        // usar la posición vieja del DOWN causaba que Minecraft
+                        // descartara el click (posición UP != posición DOWN).
+                        Win32.PostLeftUpFresh(foregroundWnd, clickLParam);
+                    }
                 }
 
                 // Espera de precision hasta el proximo tick
@@ -369,13 +372,13 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     
-                    // To prevent XClient's Aim Assist from stealing our CPU time slice,
-                    // we avoid Sleep(0) and only Sleep(1) if we have plenty of time.
-                    // Otherwise, we do an aggressive SpinWait to maintain precise CPS.
-                    if (leftMs > 3.0)       
+                    // Sleep(1) para la mayor parte de la espera, SpinWait(1) para precisión final.
+                    // SpinWait(1) en vez de SpinWait(20) para reducir contención de CPU
+                    // con el aim assist - evita que los CPS caigan de 20 a 15.
+                    if (leftMs > 2.0)       
                         Thread.Sleep(1);
                     else                    
-                        Thread.SpinWait(20);
+                        Thread.SpinWait(1);
                 }
 
                 // Update Live Stats
@@ -408,25 +411,29 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
             if (refillMode && inInventory)
             {
                 IntPtr lP = Win32.PostLeftDown(foregroundWnd);
-                long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
-                long refStart = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) { }
-                Win32.PostLeftUp(foregroundWnd, lP);
+                if (lP != IntPtr.Zero)
+                {
+                    long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
+                    long refStart = Stopwatch.GetTimestamp();
+                    while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) { }
+                    Win32.PostLeftUp(foregroundWnd, lP);
+                }
                 return;
             }
 
             IntPtr lParam = Win32.PostLeftDown(foregroundWnd);
+            if (lParam == IntPtr.Zero) return;
 
             if (!inInventory)
             {
-                int holdTime = _rng.Next(2, 5);
-                long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
+                int holdTime = _rng.Next(1, 3);
                 if (_cfg.PingMs > 0)
-                    holdTime += (int)Math.Ceiling(_cfg.PingMs / 2.0); // add half ping (ms) to hold time for server latency compensation
+                    holdTime += (int)Math.Ceiling(_cfg.PingMs * 0.5 * 0.05);
+                long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {
-                    Thread.SpinWait(20);
+                    Thread.SpinWait(1);
                 }
                 
                 Win32.PostLeftUp(foregroundWnd, lParam);

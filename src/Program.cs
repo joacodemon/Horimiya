@@ -5,6 +5,7 @@ using lospoderosos_lite.Config;
 using lospoderosos_lite.Modules;
 using lospoderosos_lite.UI;
 using System.Drawing;
+using lospoderosos_lite.Utils;
 
 namespace lospoderosos_lite
 {
@@ -17,6 +18,9 @@ namespace lospoderosos_lite
             {
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+
+                // Setup Dependency Injection Container
+                var container = new DependencyContainer();
 
                 // Initialize Configuration
                 var cfg = new AppConfig();
@@ -43,17 +47,25 @@ namespace lospoderosos_lite
                     }
                 }
 
-                // Initialize Modules
-                var clicker = new Clicker(cfg);
-                var recorder = new Recorder();
-                var misc = new Misc(cfg, clicker);
+                container.RegisterSingleton<AppConfig>(cfg);
+
+                // Initialize Modules using DI Container
+                var clicker = container.Resolve<Clicker>();
+                container.RegisterSingleton<Clicker>(clicker);
+
+                var recorder = container.Resolve<Recorder>();
+                container.RegisterSingleton<Recorder>(recorder);
+
+                var misc = container.Resolve<Misc>();
+                container.RegisterSingleton<Misc>(misc);
                 
                 // Start Modules
                 clicker.Start();
                 misc.Start();
 
-                // Run main form
-                var mainForm = new MainForm(cfg, clicker, recorder, misc);
+                // Run main form via DI
+                container.RegisterTransient<MainForm>();
+                var mainForm = container.Resolve<MainForm>();
                 Application.Run(mainForm);
             }
             catch (Exception ex)

@@ -95,12 +95,28 @@ namespace lospoderosos_lite.Utils
         [DllImport("user32.dll")]
         public static extern bool ScreenToClient(IntPtr hWnd, ref Point lpPoint);
 
+        public static bool IsCursorInClientArea(IntPtr hwnd, out Point clientPos)
+        {
+            clientPos = new Point(0, 0);
+            if (GetCursorPos(out clientPos))
+            {
+                ScreenToClient(hwnd, ref clientPos);
+                RECT rect;
+                if (GetClientRect(hwnd, out rect))
+                {
+                    // Si el Y es negativo (Title bar) o fuera de los límites, devolver falso
+                    if (clientPos.X >= 0 && clientPos.Y >= 0 && clientPos.X <= rect.right && clientPos.Y <= rect.bottom)
+                        return true;
+                }
+            }
+            return false;
+        }
+
         public static IntPtr PostLeftDown(IntPtr hwnd)
         {
             Point p;
-            if (GetCursorPos(out p))
+            if (IsCursorInClientArea(hwnd, out p))
             {
-                ScreenToClient(hwnd, ref p);
                 IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
                 PostMessage(hwnd, 0x0201, (IntPtr)1, lParam); // WM_LBUTTONDOWN, MK_LBUTTON
                 return lParam;
@@ -110,7 +126,8 @@ namespace lospoderosos_lite.Utils
 
         public static void PostLeftUp(IntPtr hwnd, IntPtr lParam)
         {
-            PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
+            if (lParam != IntPtr.Zero)
+                PostMessage(hwnd, 0x0202, (IntPtr)0, lParam); // WM_LBUTTONUP
         }
 
         /// <summary>
@@ -119,19 +136,19 @@ namespace lospoderosos_lite.Utils
         /// aim assist moves the cursor during the hold time between DOWN and UP.
         /// If UP arrives with the old position, Minecraft may discard the click.
         /// </summary>
-        public static void PostLeftUpFresh(IntPtr hwnd)
+        public static void PostLeftUpFresh(IntPtr hwnd, IntPtr fallbackLParam)
         {
             Point p;
-            if (GetCursorPos(out p))
+            if (IsCursorInClientArea(hwnd, out p))
             {
-                ScreenToClient(hwnd, ref p);
                 IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
                 PostMessage(hwnd, 0x0202, (IntPtr)0, lParam);
             }
-            else
+            else if (fallbackLParam != IntPtr.Zero)
             {
-                // Fallback: posición 0,0 — mejor que no enviar nada
-                PostMessage(hwnd, 0x0202, (IntPtr)0, IntPtr.Zero);
+                // Si el mouse salió de la ventana durante el hold, mandamos el UP
+                // en la última posición válida (fallback) para que no se quede pegado.
+                PostMessage(hwnd, 0x0202, (IntPtr)0, fallbackLParam);
             }
         }
 

@@ -57,6 +57,7 @@ namespace lospoderosos_lite.Config
         public int ColorAccent = Color.FromArgb(0, 180, 255).ToArgb();
         public bool ParticleEnabled = true;
         public bool RefillMode = false;
+        public int NotificationPosition = 0; // 0=Bottom Left, 1=Bottom Right, 2=Top Left, 3=Top Right
 
 
         public bool FlushDns = false;
@@ -112,6 +113,7 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
             sb.AppendLine(string.Format("  \"ParticleEnabled\": {0},", ParticleEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"RefillMode\": {0},", RefillMode ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"NotificationPosition\": {0},", NotificationPosition));
 
 
             sb.AppendLine(string.Format("  \"FlushDns\": {0},", FlushDns ? "true" : "false"));
@@ -181,6 +183,7 @@ namespace lospoderosos_lite.Config
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);
             cfg.ParticleEnabled = GetBool(json, "ParticleEnabled", cfg.ParticleEnabled);
             cfg.RefillMode = GetBool(json, "RefillMode", cfg.RefillMode);
+            cfg.NotificationPosition = GetInt(json, "NotificationPosition", cfg.NotificationPosition);
 
 
             cfg.FlushDns = GetBool(json, "FlushDns", cfg.FlushDns);

@@ -47,6 +47,8 @@ public class ImGuiForm : Form
     private float[] _customCpsWeightsFloat = new float[25];
     private float[] _presetAddCustomCpsWeightsFloat = new float[25];
 
+    private lospoderosos_lite.UI.NotificationOverlay _notifyOverlay;
+
     private Stopwatch _frameSw = Stopwatch.StartNew();
     private volatile bool _disposed = false;
     private const double TARGET_FRAME_TIME_MS = 1000.0 / 60.0; // 60 FPS cap
@@ -85,15 +87,20 @@ public class ImGuiForm : Form
         _glControl.Dock = DockStyle.Fill;
         Controls.Add(_glControl);
 
+        _notifyOverlay = new lospoderosos_lite.UI.NotificationOverlay();
+        _notifyOverlay.Show(this);
+
         _bindTimer = new System.Windows.Forms.Timer { Interval = 20 };
         _bindTimer.Tick += BindTick;
 
         _recorder.StatusChanged += s => { _recorderStatus = s; };
         _misc.ClickBindTriggered += () => { 
             _clicker.Clicking = !_clicker.Clicking; 
+            _notifyOverlay.ShowNotification("Left Clicker ", _clicker.Clicking ? "ON" : "OFF", _clicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
         };
         _misc.RightClickBindTriggered += () => { 
             _rightClicker.Clicking = !_rightClicker.Clicking; 
+            _notifyOverlay.ShowNotification("Right Clicker ", _rightClicker.Clicking ? "ON" : "OFF", _rightClicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
         };
         _misc.HideBindTriggered += () => { 
             if (Visible) Hide(); 
@@ -354,8 +361,8 @@ public class ImGuiForm : Form
         Vector2 p = ImGui.GetCursorScreenPos();
         var draw_list = ImGui.GetWindowDrawList();
 
-        float height = 24.0f;
-        float width = 45.0f;
+        float height = 20.0f;
+        float width = 42.0f;
         float radius = height * 0.5f;
 
         ImGui.InvisibleButton(label, new Vector2(width, height));
@@ -368,19 +375,24 @@ public class ImGuiForm : Form
 
         float t = v ? 1.0f : 0.0f;
 
-        // Background color
-        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.0f, 0.8f, 0.0f, 1f) : new Vector4(0.8f, 0.0f, 0.0f, 1f));
+        // Background color (vibrant Green / Red)
+        uint col_bg = ImGui.GetColorU32(v ? new Vector4(0.0f, 0.85f, 0.0f, 1f) : new Vector4(0.85f, 0.0f, 0.0f, 1f));
         draw_list.AddRectFilled(p, new Vector2(p.X + width, p.Y + height), col_bg, radius);
 
         // Circle color
         uint col_circle = ImGui.GetColorU32(new Vector4(0.9f, 0.9f, 0.9f, 1f));
         float circle_x = p.X + radius + t * (width - radius * 2.0f);
-        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius), radius - 3.0f, col_circle);
+        draw_list.AddCircleFilled(new Vector2(circle_x, p.Y + radius), radius - 1.5f, col_circle);
 
         ImGui.SameLine();
         string displayLabel = label;
         int hashIdx = label.IndexOf("##");
         if (hashIdx >= 0) displayLabel = label.Substring(0, hashIdx);
+        
+        // Vertical alignment for the text
+        float textYOffset = (height - ImGui.GetTextLineHeight()) * 0.5f;
+        Vector2 cursorPos = ImGui.GetCursorPos();
+        ImGui.SetCursorPos(new Vector2(cursorPos.X + 2, cursorPos.Y + textYOffset));
         ImGui.Text(displayLabel);
         
         return clicked;
@@ -399,7 +411,10 @@ public class ImGuiForm : Form
 
         bool clicking = _clicker.Clicking;
         if (DrawToggle("Enabled##LMB", ref clicking))
+        {
             _clicker.Clicking = clicking;
+            _notifyOverlay.ShowNotification("Left Clicker ", _clicker.Clicking ? "ON" : "OFF", _clicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+        }
 
         ImGui.Dummy(new Vector2(0, 15));
         
@@ -493,7 +508,10 @@ public class ImGuiForm : Form
 
         bool clicking = _rightClicker.Clicking;
         if (DrawToggle("Enabled##RMB", ref clicking))
+        {
             _rightClicker.Clicking = clicking;
+            _notifyOverlay.ShowNotification("Right Clicker ", _rightClicker.Clicking ? "ON" : "OFF", _rightClicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+        }
 
         ImGui.Dummy(new Vector2(0, 15));
         
@@ -594,6 +612,15 @@ public class ImGuiForm : Form
         string hbindText = _cfg.HideBind == 0 ? "Hide Bind: none" : "Hide Bind: " + KeyName(_cfg.HideBind);
         if (_bindMode && _bindingTarget == 1) hbindText = "...press key...";
         if (ImGui.Button(hbindText, new Vector2(200, 0))) BeginBind(1);
+
+        ImGui.Dummy(new Vector2(0, 10));
+
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Notifications");
+        string[] notifPos = { "Bottom Left", "Bottom Right", "Top Left", "Top Right" };
+        int notifIdx = _cfg.NotificationPosition;
+        ImGui.SetNextItemWidth(150);
+        if (ImGui.Combo("Position", ref notifIdx, notifPos, notifPos.Length))
+            _cfg.NotificationPosition = notifIdx;
 
         ImGui.Dummy(new Vector2(0, 10));
         
