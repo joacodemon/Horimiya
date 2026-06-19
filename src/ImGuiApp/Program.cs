@@ -86,13 +86,13 @@ internal static class Program
             Console.WriteLine(@"                  |_|                                                                          ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           2.2.9\n\n");
+            Console.WriteLine("                                           3.0.0\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("2.2.9");
+            Updater.CheckForUpdates("3.0.0");
             Console.WriteLine("");
             
             int totalBlocks = 30;

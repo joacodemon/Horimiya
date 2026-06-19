@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using lospoderosos_lite.Config;
 using lospoderosos_lite.Utils;
 
 namespace lospoderosos_lite.Modules
@@ -21,6 +22,7 @@ namespace lospoderosos_lite.Modules
         }
     }
 
+    [Injectable(true)]
     public class Recorder
     {
         private List<MacroEv> _events = new List<MacroEv>();

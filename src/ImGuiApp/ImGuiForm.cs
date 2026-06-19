@@ -96,11 +96,11 @@ public class ImGuiForm : Form
         _recorder.StatusChanged += s => { _recorderStatus = s; };
         _misc.ClickBindTriggered += () => { 
             _clicker.Clicking = !_clicker.Clicking; 
-            _notifyOverlay.ShowNotification("Left Clicker ", _clicker.Clicking ? "ON" : "OFF", _clicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+            _notifyOverlay.ShowNotification("Left Clicker " + (_clicker.Clicking ? "ON" : "OFF"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
         };
         _misc.RightClickBindTriggered += () => { 
             _rightClicker.Clicking = !_rightClicker.Clicking; 
-            _notifyOverlay.ShowNotification("Right Clicker ", _rightClicker.Clicking ? "ON" : "OFF", _rightClicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+            _notifyOverlay.ShowNotification("Right Clicker " + (_rightClicker.Clicking ? "ON" : "OFF"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
         };
         _misc.HideBindTriggered += () => { 
             if (Visible) Hide(); 
@@ -413,7 +413,7 @@ public class ImGuiForm : Form
         if (DrawToggle("Enabled##LMB", ref clicking))
         {
             _clicker.Clicking = clicking;
-            _notifyOverlay.ShowNotification("Left Clicker ", _clicker.Clicking ? "ON" : "OFF", _clicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+            _notifyOverlay.ShowNotification("Left Clicker " + (_clicker.Clicking ? "ON" : "OFF"), _clicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
         }
 
         ImGui.Dummy(new Vector2(0, 15));
@@ -510,7 +510,7 @@ public class ImGuiForm : Form
         if (DrawToggle("Enabled##RMB", ref clicking))
         {
             _rightClicker.Clicking = clicking;
-            _notifyOverlay.ShowNotification("Right Clicker ", _rightClicker.Clicking ? "ON" : "OFF", _rightClicker.Clicking ? Color.FromArgb(255, 60, 200, 60) : Color.FromArgb(255, 220, 60, 60));
+            _notifyOverlay.ShowNotification("Right Clicker " + (_rightClicker.Clicking ? "ON" : "OFF"), _rightClicker.Clicking ? lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success : lospoderosos_lite.UI.NotificationOverlay.NotificationType.Error);
         }
 
         ImGui.Dummy(new Vector2(0, 15));

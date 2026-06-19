@@ -19,6 +19,7 @@ using lospoderosos_lite.Utils;
 
 namespace lospoderosos_lite.Modules
 {
+    [Injectable(true)]
     public class Clicker
     {
         private readonly AppConfig _cfg;

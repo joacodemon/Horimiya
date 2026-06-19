@@ -49,15 +49,13 @@ namespace lospoderosos_lite
 
                 container.RegisterSingleton<AppConfig>(cfg);
 
+                // Auto Register all [Injectable] classes
+                container.AutoRegister(System.Reflection.Assembly.GetExecutingAssembly());
+
                 // Initialize Modules using DI Container
                 var clicker = container.Resolve<Clicker>();
-                container.RegisterSingleton<Clicker>(clicker);
-
                 var recorder = container.Resolve<Recorder>();
-                container.RegisterSingleton<Recorder>(recorder);
-
                 var misc = container.Resolve<Misc>();
-                container.RegisterSingleton<Misc>(misc);
                 
                 // Start Modules
                 clicker.Start();

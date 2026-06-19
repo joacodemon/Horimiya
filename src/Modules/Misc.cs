@@ -4,11 +4,13 @@ using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using lospoderosos_lite.Config;
 using lospoderosos_lite.Utils;
 
 namespace lospoderosos_lite.Modules
 {
+    [Injectable(true)]
     public class Misc
     {
         private readonly AppConfig _cfg;

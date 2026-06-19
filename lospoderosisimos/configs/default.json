@@ -1,9 +1,9 @@
 {
-  "AverageCps": 15.0 ,
+  "AverageCps": 19.8 ,
   "Mode": 0,
   "BBMode": 1,
   "OnlyInGame": true,
-  "RmbLock": true,
+  "RmbLock": false,
   "WorkInMenus": true,
   "DiscordRpc": true,
   "DiscordAppId": "1234567890123456789",
@@ -25,7 +25,6 @@
   "StreamerMode": false,
   "DestructBind": 0,
   "WTapEnabled": false,
-  "PingMs": 181.8,
   "CustomCpsWeights": [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
   "UserPresets": [
 

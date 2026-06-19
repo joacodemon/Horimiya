@@ -11,6 +11,7 @@ using lospoderosos_lite.Utils;
 
 namespace lospoderosos_lite.UI
 {
+    [Injectable(false)]
     public class MainForm : Form
     {
         // Palette
