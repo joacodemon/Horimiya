@@ -39,7 +39,15 @@ public class ImGuiController : IDisposable
         _windowHeight = height;
         ImGui.CreateContext();
         var io = ImGui.GetIO();
-        io.Fonts.AddFontDefault();
+        if (System.IO.File.Exists(@"C:\Windows\Fonts\segoeui.ttf"))
+        {
+            // Load Segoe UI for a much cleaner look
+            io.Fonts.AddFontFromFileTTF(@"C:\Windows\Fonts\segoeui.ttf", 16.0f);
+        }
+        else
+        {
+            io.Fonts.AddFontDefault();
+        }
         io.DisplaySize = new System.Numerics.Vector2(width, height);
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
 

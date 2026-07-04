@@ -506,8 +506,13 @@ public class ImGuiForm : Form
 
         ImGui.Dummy(new Vector2(0, 10));
 
-        
-        
+        ImGui.TextColored(new Vector4(0.5f, 0.5f, 0.5f, 1f), "Ping-Aware Timing");
+        float ping = (float)_cfg.PingMs;
+        ImGui.SetNextItemWidth(350);
+        if (ImGui.SliderFloat("Ping (ms)", ref ping, 0.0f, 200.0f, "%.0f ms"))
+            _cfg.PingMs = ping;
+        if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+
         ImGui.Dummy(new Vector2(0, 10));
         if (ImGui.TreeNode("Advanced Logic"))
         {
@@ -522,8 +527,18 @@ public class ImGuiForm : Form
             if (ImGui.Checkbox("Only In Game", ref oig)) _cfg.OnlyInGame = oig;
             bool rmb = _cfg.RmbLock;
             if (ImGui.Checkbox("RMB-Lock", ref rmb)) _cfg.RmbLock = rmb;
-            bool wim = _cfg.WorkInMenus;
-            if (ImGui.Checkbox("Work in Menus", ref wim)) _cfg.WorkInMenus = wim;
+            bool wim = !_cfg.WorkInMenus;
+            if (ImGui.Checkbox("Smart Clicker (Pause in Menus)", ref wim)) _cfg.WorkInMenus = !wim;
+            bool smart = _cfg.SmartMiningEnabled;
+            if (ImGui.Checkbox("Smart Mining Mode", ref smart)) _cfg.SmartMiningEnabled = smart;
+            bool refill = _cfg.RefillMode;
+            if (ImGui.Checkbox("Smart Refill (Shift+Click)", ref refill)) _cfg.RefillMode = refill;
+            
+            float doubleClick = (float)_cfg.DoubleClickChance;
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Double Click %", ref doubleClick, 0.0f, 20.0f, "%.1f %%"))
+                _cfg.DoubleClickChance = doubleClick;
+            if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
             
             string bindText = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
             if (_bindMode && _bindingTarget == 0) bindText = "...press key...";
@@ -657,6 +672,13 @@ public class ImGuiForm : Form
         string hbindText = _cfg.HideBind == 0 ? "Hide Bind: none" : "Hide Bind: " + KeyName(_cfg.HideBind);
         if (_bindMode && _bindingTarget == 1) hbindText = "...press key...";
         if (ImGui.Button(hbindText, new Vector2(200, 0))) BeginBind(1);
+
+        bool aswp = _cfg.AutoSwitchProfiles;
+        if (ImGui.Checkbox("Multi-Profile Switcher", ref aswp)) _cfg.AutoSwitchProfiles = aswp;
+
+        string switchBindText = _cfg.ProfileSwitchBind == 0 ? "Profile Switch Bind: none" : "Profile Switch Bind: " + KeyName(_cfg.ProfileSwitchBind);
+        if (_bindMode && _bindingTarget == 4) switchBindText = "...press key...";
+        if (ImGui.Button(switchBindText, new Vector2(200, 0))) BeginBind(4);
 
         ImGui.Dummy(new Vector2(0, 10));
 
@@ -905,6 +927,7 @@ public class ImGuiForm : Form
         else if (_bindingTarget == 1) _cfg.HideBind = vk;
         else if (_bindingTarget == 2) _cfg.DestructBind = vk;
         else if (_bindingTarget == 3) _cfg.RightBind = vk;
+        else if (_bindingTarget == 4) _cfg.ProfileSwitchBind = vk;
     }
 
     private void OnIotMessageReceived(object sender, string payload)

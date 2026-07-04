@@ -55,10 +55,12 @@ namespace lospoderosos_lite.Config
         public MqttSettings Mqtt = new MqttSettings(); // MQTT configuration
         public double[] CustomCpsWeights = new double[25]; // CPS 1-25 weights
         public int ColorAccent = Color.FromArgb(0, 180, 255).ToArgb();
-        public bool ParticleEnabled = true;
-        public bool RefillMode = false;
         public int NotificationPosition = 0; // 0=Bottom Left, 1=Bottom Right, 2=Top Left, 3=Top Right
-
+        public bool ParticleEnabled = false;
+        public bool RefillMode = false;
+        public bool SmartMiningEnabled = false;
+        public double DoubleClickChance = 0.0;
+        public bool ChromaRGB = false;
 
         public bool FlushDns = false;
         public bool HideTaskbar = false;
@@ -66,6 +68,14 @@ namespace lospoderosos_lite.Config
         public int DestructBind = 0;
         public bool WTapEnabled = false;
         public double PingMs = 0.0; // Latency compensation (0-200ms)
+        public bool HitDetectionEnabled = false; // Pixel-based hit detection
+        public bool AdaptiveCpsEnabled = false;   // Reduce CPS when missing
+        public double AdaptiveCpsMin = 8.0;       // Min CPS when adaptive is on
+        public bool AutoSwitchProfiles = false;
+        public int ProfileSwitchBind = 0;
+        public int CurrentProfileIndex = 0;
+        public bool MouseJitterEnabled = false;
+        public double MouseJitterStrength = 2.0;
         public List<PresetConfig> Presets = new List<PresetConfig>();
 
         public AppConfig()
@@ -113,7 +123,10 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
             sb.AppendLine(string.Format("  \"ParticleEnabled\": {0},", ParticleEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"RefillMode\": {0},", RefillMode ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"SmartMiningEnabled\": {0},", SmartMiningEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"DoubleClickChance\": {0},", DoubleClickChance.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"NotificationPosition\": {0},", NotificationPosition));
+            sb.AppendLine(string.Format("  \"ChromaRGB\": {0},", ChromaRGB ? "true" : "false"));
 
 
             sb.AppendLine(string.Format("  \"FlushDns\": {0},", FlushDns ? "true" : "false"));
@@ -122,6 +135,13 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"DestructBind\": {0},", DestructBind));
             sb.AppendLine(string.Format("  \"WTapEnabled\": {0},", WTapEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"PingMs\": {0},", PingMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"HitDetectionEnabled\": {0},", HitDetectionEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"AdaptiveCpsEnabled\": {0},", AdaptiveCpsEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"AdaptiveCpsMin\": {0},", AdaptiveCpsMin.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"AutoSwitchProfiles\": {0},", AutoSwitchProfiles ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"ProfileSwitchBind\": {0},", ProfileSwitchBind));
+            sb.AppendLine(string.Format("  \"MouseJitterEnabled\": {0},", MouseJitterEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"MouseJitterStrength\": {0},", MouseJitterStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
 
             sb.Append("  \"CustomCpsWeights\": [");
             for (int i = 0; i < CustomCpsWeights.Length; i++)
@@ -183,7 +203,10 @@ namespace lospoderosos_lite.Config
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);
             cfg.ParticleEnabled = GetBool(json, "ParticleEnabled", cfg.ParticleEnabled);
             cfg.RefillMode = GetBool(json, "RefillMode", cfg.RefillMode);
+            cfg.SmartMiningEnabled = GetBool(json, "SmartMiningEnabled", cfg.SmartMiningEnabled);
+            cfg.DoubleClickChance = GetDouble(json, "DoubleClickChance", cfg.DoubleClickChance);
             cfg.NotificationPosition = GetInt(json, "NotificationPosition", cfg.NotificationPosition);
+            cfg.ChromaRGB = GetBool(json, "ChromaRGB", cfg.ChromaRGB);
 
 
             cfg.FlushDns = GetBool(json, "FlushDns", cfg.FlushDns);
@@ -192,6 +215,13 @@ namespace lospoderosos_lite.Config
             cfg.DestructBind = GetInt(json, "DestructBind", cfg.DestructBind);
             cfg.WTapEnabled = GetBool(json, "WTapEnabled", cfg.WTapEnabled);
             cfg.PingMs = Math.Max(0, Math.Min(200, GetDouble(json, "PingMs", cfg.PingMs)));
+            cfg.HitDetectionEnabled = GetBool(json, "HitDetectionEnabled", cfg.HitDetectionEnabled);
+            cfg.AdaptiveCpsEnabled = GetBool(json, "AdaptiveCpsEnabled", cfg.AdaptiveCpsEnabled);
+            cfg.AdaptiveCpsMin = Math.Max(1, Math.Min(25, GetDouble(json, "AdaptiveCpsMin", cfg.AdaptiveCpsMin)));
+            cfg.AutoSwitchProfiles = GetBool(json, "AutoSwitchProfiles", cfg.AutoSwitchProfiles);
+            cfg.ProfileSwitchBind = GetInt(json, "ProfileSwitchBind", cfg.ProfileSwitchBind);
+            cfg.MouseJitterEnabled = GetBool(json, "MouseJitterEnabled", cfg.MouseJitterEnabled);
+            cfg.MouseJitterStrength = Math.Max(1.0, Math.Min(10.0, GetDouble(json, "MouseJitterStrength", cfg.MouseJitterStrength)));
 
             double[] loadedWeights = GetDoubleArray(json, "CustomCpsWeights");
             if (loadedWeights != null && loadedWeights.Length == 25)

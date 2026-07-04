@@ -32,6 +32,12 @@ namespace lospoderosos_lite.Utils
         [DllImport("user32.dll")]
         public static extern bool SetCursorPos(int x, int y);
 
+        [DllImport("user32.dll")]
+        public static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT { public int X, Y; }
+
         // ── Window Management ────────────────────────────────────────────────
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
@@ -160,6 +166,38 @@ namespace lospoderosos_lite.Utils
         public static void SendRightUp()
         {
             mouse_event(0x0010, 0, 0, 0, 0x1337);
+        }
+
+        public static IntPtr PostRightDown(IntPtr hwnd)
+        {
+            Point p;
+            if (IsCursorInClientArea(hwnd, out p))
+            {
+                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                PostMessage(hwnd, 0x0204, (IntPtr)2, lParam); // WM_RBUTTONDOWN, MK_RBUTTON
+                return lParam;
+            }
+            return IntPtr.Zero;
+        }
+
+        public static void PostRightUp(IntPtr hwnd, IntPtr lParam)
+        {
+            if (lParam != IntPtr.Zero)
+                PostMessage(hwnd, 0x0205, (IntPtr)0, lParam); // WM_RBUTTONUP
+        }
+
+        public static void PostRightUpFresh(IntPtr hwnd, IntPtr fallbackLParam)
+        {
+            Point p;
+            if (IsCursorInClientArea(hwnd, out p))
+            {
+                IntPtr lParam = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                PostMessage(hwnd, 0x0205, (IntPtr)0, lParam);
+            }
+            else if (fallbackLParam != IntPtr.Zero)
+            {
+                PostMessage(hwnd, 0x0205, (IntPtr)0, fallbackLParam);
+            }
         }
 
         [DllImport("user32.dll")]

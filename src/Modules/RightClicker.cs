@@ -267,7 +267,7 @@ namespace lospoderosos_lite.Modules
                     if (leftMs > 3.0)       
                         Thread.Sleep(1);
                     else                    
-                        Thread.SpinWait(20);
+                        Thread.Sleep(0);
                 }
 
                 // Update Live Stats
@@ -310,6 +310,7 @@ namespace lospoderosos_lite.Modules
                 long startTicks = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                 {
+                    Thread.Sleep(0);
                 }
                 
                 Win32.SendRightUp();
@@ -318,7 +319,7 @@ namespace lospoderosos_lite.Modules
             {
                 long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
                 long startTicks = Stopwatch.GetTimestamp();
-                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { }
+                while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { Thread.Sleep(0); }
                 Win32.SendRightUp();
             }
         }
@@ -345,6 +346,7 @@ namespace lospoderosos_lite.Modules
                                        title.Contains("badlion") || 
                                        title.Contains("labymod") ||
                                        title.Contains("salwyrr") ||
+                                       title.Contains("cheatbreaker") ||
                                        title.Contains("feather");
                 }
                 _focusCheckTimer.Restart();

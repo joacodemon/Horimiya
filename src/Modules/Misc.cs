@@ -37,6 +37,7 @@ namespace lospoderosos_lite.Modules
         public event Action RightClickBindTriggered;
         public event Action HideBindTriggered;
         public event Action DestructBindTriggered;
+        public event Action<string> ProfileSwitchTriggered;
 
         public Misc(AppConfig cfg, Clicker clicker)
         {
@@ -101,6 +102,12 @@ namespace lospoderosos_lite.Modules
             bool rightClickKeyWasDown = false;
             bool hideKeyWasDown = false;
             bool destructKeyWasDown = false;
+            bool switchKeyWasDown = false;
+
+            // Built-in profiles for the switcher
+            string[] profileNames    = { "Aggressive", "Legit" };
+            double[] profileCps      = { 20.0, 12.0 };
+            int[]    profileRandMode = { 2, 0 }; // NoDelay, Jitter
 
             while (_hotkeyRun)
             {
@@ -178,6 +185,32 @@ namespace lospoderosos_lite.Modules
                 else
                 {
                     destructKeyWasDown = false;
+                }
+
+                // Check Profile Switch Bind
+                int switchBind = _cfg.ProfileSwitchBind;
+                if (_cfg.AutoSwitchProfiles && switchBind > 0)
+                {
+                    bool isDown = (Win32.GetAsyncKeyState(switchBind) & 0x8000) != 0;
+                    if (isDown && !switchKeyWasDown)
+                    {
+                        _cfg.CurrentProfileIndex = (_cfg.CurrentProfileIndex + 1) % profileNames.Length;
+                        int idx = _cfg.CurrentProfileIndex;
+                        _cfg.AverageCps  = profileCps[idx];
+                        _cfg.RandMode    = profileRandMode[idx];
+                        _cfg.Save();
+                        string notifMsg = "Profile: " + profileNames[idx] + " (" + profileCps[idx].ToString("F0") + " CPS)";
+                        lospoderosos_lite.UI.NotificationOverlay.Show(
+                            "lospoderosisimos", notifMsg,
+                            lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success,
+                            _cfg.NotificationPosition);
+                        if (ProfileSwitchTriggered != null) ProfileSwitchTriggered(notifMsg);
+                    }
+                    switchKeyWasDown = isDown;
+                }
+                else
+                {
+                    switchKeyWasDown = false;
                 }
 
                 Thread.Sleep(15); // Poll frequency

@@ -41,25 +41,37 @@ namespace lospoderosos_lite.UI
         readonly Misc      _misc;
 
         int _tab = 0;
-        Panel _pLmb, _pRec, _pMisc, _pPresets;
-        Button _bLmb, _bRec, _bMisc, _bPresets;
+        Panel _pLmb, _pRec, _pMisc, _pPresets, _pRmb;
+        Button _bLmb, _bRec, _bMisc, _bPresets, _bRmb;
 
         // Bind state
         bool _bindMode, _bindHide, _bindDestruct, _waitRelease;
         System.Windows.Forms.Timer _bindTimer;
 
         // UI refs for sync
-        FlatCheck  _chkTgl, _chkOig, _chkRmb, _chkWim, _chkRefill;
+        FlatCheck  _chkTgl, _chkOig, _chkRmb, _chkWim, _chkRefill, _chkTglRight;
         FlatCheck  _chkRpc, _chkParticle;
-        FlatSlider _sldrCps, _sldrPing;
-        FlatDrop   _dRand;
-        FlatDrop   _dMode, _dBB, _dSnd;
+        FlatSlider _sldrCps, _sldrPing, _sldrCpsRight;
+        FlatDrop   _dRand, _dRandRight;
+        FlatDrop   _dMode, _dBB, _dSnd, _dModeRight;
         Button     _btnBind, _btnHide, _btnColor, _btnDestructBind;
         Label      _lblRpc, _lblRecSt;
         FlatTextBox _txAppId;
         ParticleOverlayForm _particleOverlay;
 
         Color _accentColor = Color.FromArgb(0, 180, 255);
+        
+        // ── Animation & Chroma State ──
+        private System.Windows.Forms.Timer _chromaTimer;
+        private float _chromaHue = 0f;
+        
+        private System.Windows.Forms.Timer _animTimer;
+        private Panel _animCurrentPanel;
+        private Panel _animNextPanel;
+        private int _animTargetX;
+        private int _animDirection;
+        private bool _isAnimating = false;
+
         // Drag flag for custom chart interaction
         private bool _isDragging = false;
         // References to custom randomization UI
@@ -128,7 +140,86 @@ namespace lospoderosos_lite.UI
             // Apply saved accent color
             _accentColor = Color.FromArgb(_cfg.ColorAccent);
             ApplyAccentToAll(_accentColor);
+
+            // ── Initialize Animations & Chroma ──
+            _chromaTimer = new System.Windows.Forms.Timer { Interval = 50 };
+            _chromaTimer.Tick += ChromaTick;
+            if (_cfg.ChromaRGB) _chromaTimer.Start();
+
+            _animTimer = new System.Windows.Forms.Timer { Interval = 15 };
+            _animTimer.Tick += AnimTick;
+
+            // Auto Switch Profiles timer
+            var autoSwitchTimer = new System.Windows.Forms.Timer { Interval = 1000 };
+            string lastMatchedPreset = null;
+            autoSwitchTimer.Tick += (sender, args) => {
+                if (!_cfg.AutoSwitchProfiles) return;
+                IntPtr hwnd = Win32.GetForegroundWindow();
+                if (hwnd == IntPtr.Zero) return;
+                
+                System.Text.StringBuilder sb = new System.Text.StringBuilder(256);
+                Win32.GetWindowText(hwnd, sb, 256);
+                string title = sb.ToString().ToLower();
+                
+                if (title.Length == 0) return;
+                
+                foreach (var pr in _cfg.Presets)
+                {
+                    if (!string.IsNullOrEmpty(pr.Server) && pr.Server.Length > 2 && title.Contains(pr.Server.ToLower()))
+                    {
+                        if (lastMatchedPreset != pr.Name)
+                        {
+                            lastMatchedPreset = pr.Name;
+                            _cfg.AverageCps = pr.Cps;
+                            _cfg.RandMode = pr.RandMode;
+                            if (_sldrCps != null) { _sldrCps.Value = _cfg.AverageCps; _sldrCps.Invalidate(); }
+                            if (_dRand != null) { _dRand.SelectedIndex = _cfg.RandMode; }
+                        }
+                        break;
+                    }
+                }
+            };
+            autoSwitchTimer.Start();
+
             Invalidate();
+        }
+
+        // ── Chroma RGB Logic ──
+        private void ChromaTick(object sender, EventArgs e)
+        {
+            if (!_cfg.ChromaRGB) return;
+            
+            _chromaHue += 2f;
+            if (_chromaHue >= 360f) _chromaHue -= 360f;
+            
+            Color newColor = ColorFromHSV(_chromaHue, 1.0, 1.0);
+            
+            // Only update if it significantly changes to prevent too much CPU usage
+            if (Math.Abs(newColor.R - _accentColor.R) > 2 ||
+                Math.Abs(newColor.G - _accentColor.G) > 2 ||
+                Math.Abs(newColor.B - _accentColor.B) > 2)
+            {
+                ApplyAccentToAll(newColor);
+            }
+        }
+        
+        public static Color ColorFromHSV(double hue, double saturation, double value)
+        {
+            int hi = Convert.ToInt32(Math.Floor(hue / 60)) % 6;
+            double f = hue / 60 - Math.Floor(hue / 60);
+
+            value = value * 255;
+            int v = Convert.ToInt32(value);
+            int p = Convert.ToInt32(value * (1 - saturation));
+            int q = Convert.ToInt32(value * (1 - f * saturation));
+            int t = Convert.ToInt32(value * (1 - (1 - f) * saturation));
+
+            if (hi == 0) return Color.FromArgb(255, v, t, p);
+            else if (hi == 1) return Color.FromArgb(255, q, v, p);
+            else if (hi == 2) return Color.FromArgb(255, p, v, t);
+            else if (hi == 3) return Color.FromArgb(255, p, q, v);
+            else if (hi == 4) return Color.FromArgb(255, t, p, v);
+            else return Color.FromArgb(255, v, p, q);
         }
 
         void RecomputeTextColors()
@@ -225,6 +316,35 @@ namespace lospoderosos_lite.UI
                     Region = new Region(path);
             }
         }
+        
+        // ── Slide Animation Logic ──
+        private void AnimTick(object sender, EventArgs e)
+        {
+            if (!_isAnimating || _animCurrentPanel == null || _animNextPanel == null)
+            {
+                _animTimer.Stop();
+                _isAnimating = false;
+                return;
+            }
+
+            int speed = 40; // Pixels per tick
+            
+            // Move panels
+            _animCurrentPanel.Left += speed * _animDirection;
+            _animNextPanel.Left += speed * _animDirection;
+
+            // Check if animation is done
+            if ((_animDirection < 0 && _animNextPanel.Left <= _animTargetX) || 
+                (_animDirection > 0 && _animNextPanel.Left >= _animTargetX))
+            {
+                _animNextPanel.Left = _animTargetX;
+                _animCurrentPanel.Visible = false;
+                _animCurrentPanel = null;
+                _animNextPanel = null;
+                _isAnimating = false;
+                _animTimer.Stop();
+            }
+        }
 
         // ── Build ─────────────────────────────────────────────────────────────
         void Build()
@@ -259,10 +379,11 @@ namespace lospoderosos_lite.UI
             sb.Controls.Add(Lbl("los", DIM, 5, 6, FNT));
             sb.Controls.Add(Lbl("poderosisimos", DIM, 5, 18, FNT));
             _bLmb  = SideBtn("LMB",  42); _bLmb.Click  += (s,e) => SetTab(0);
-            _bRec  = SideBtn("REC",  72); _bRec.Click  += (s,e) => SetTab(1);
-            _bPresets = SideBtn("PRESETS", 102); _bPresets.Click += (s,e) => SetTab(3);
-            _bMisc = SideBtn("MISC",132); _bMisc.Click += (s,e) => SetTab(2);
-            sb.Controls.Add(_bLmb); sb.Controls.Add(_bRec); sb.Controls.Add(_bPresets); sb.Controls.Add(_bMisc);
+            _bRmb  = SideBtn("RMB",  72); _bRmb.Click  += (s,e) => SetTab(4);
+            _bRec  = SideBtn("REC",  102); _bRec.Click  += (s,e) => SetTab(1);
+            _bPresets = SideBtn("PRESETS", 132); _bPresets.Click += (s,e) => SetTab(3);
+            _bMisc = SideBtn("MISC",162); _bMisc.Click += (s,e) => SetTab(2);
+            sb.Controls.Add(_bLmb); sb.Controls.Add(_bRmb); sb.Controls.Add(_bRec); sb.Controls.Add(_bPresets); sb.Controls.Add(_bMisc);
             
             var btnEject = SideBtn("EJECT CLIENT", 380);
             btnEject.Font = new Font("Courier New", 7F, FontStyle.Bold);
@@ -284,10 +405,11 @@ namespace lospoderosos_lite.UI
             var ct = new Panel { BackColor = BG };
             ct.SetBounds(90, 26, 860, 418);
             _pLmb  = BuildLMB();     _pLmb.Dock     = DockStyle.Fill; _pLmb.Visible     = true;
+            _pRmb  = BuildRMB();     _pRmb.Dock     = DockStyle.Fill; _pRmb.Visible     = false;
             _pRec  = BuildREC();     _pRec.Dock     = DockStyle.Fill; _pRec.Visible     = false;
             _pMisc = BuildMISC();    _pMisc.Dock    = DockStyle.Fill; _pMisc.Visible    = false;
             _pPresets = BuildPRESETS(); _pPresets.Dock = DockStyle.Fill; _pPresets.Visible = false;
-            ct.Controls.AddRange(new Control[] { _pMisc, _pRec, _pPresets, _pLmb });
+            ct.Controls.AddRange(new Control[] { _pMisc, _pRec, _pPresets, _pRmb, _pLmb });
 
             Controls.AddRange(new Control[] { tb, sb, ft, ct });
             Paint += (s,e) => {
@@ -354,12 +476,22 @@ namespace lospoderosos_lite.UI
 
             // Checkboxes
             _chkOig  = new FlatCheck("Only In Game",    _cfg.OnlyInGame)  { Location = new Point(8, 66)  };
-            _chkRmb  = new FlatCheck("RMB-Lock",        _cfg.RmbLock)     { Location = new Point(8, 90) };
-            _chkWim  = new FlatCheck("Work in Menus",   _cfg.WorkInMenus) { Location = new Point(8, 114) };
+            _chkRmb  = new FlatCheck("RMB-Lock",        _cfg.RmbLock)     { Location = new Point(140, 66) };
+            _chkWim  = new FlatCheck("Smart Clicker (Pause in Menus)", !_cfg.WorkInMenus) { Location = new Point(8, 90) };
+            var chkSmartMining = new FlatCheck("Smart Mining Mode", _cfg.SmartMiningEnabled) { Location = new Point(220, 90) };
             
             _chkOig.Click  += (s,e) => _cfg.OnlyInGame  = _chkOig.Checked;
             _chkRmb.Click  += (s,e) => _cfg.RmbLock     = _chkRmb.Checked;
-            _chkWim.Click  += (s,e) => _cfg.WorkInMenus = _chkWim.Checked;
+            // WorkInMenus is true if Smart Clicker is OFF
+            _chkWim.Click  += (s,e) => _cfg.WorkInMenus = !_chkWim.Checked;
+            chkSmartMining.Click += (s,e) => { _cfg.SmartMiningEnabled = chkSmartMining.Checked; _cfg.Save(); };
+
+            // Double Click Chance slider
+            var sldrDouble = new FlatSlider(_cfg.DoubleClickChance, 0.0, 20.0)
+                { Location = new Point(8, 114), Size = new Size(380, 22) };
+            sldrDouble.ValueChanged += (s,e) => _cfg.DoubleClickChance = sldrDouble.Value;
+            sldrDouble.MouseUp += (s,e) => _cfg.Save();
+            lft.Controls.Add(Lbl("Double Click %", DIM, 395, 120, FNT));
 
             // Ping (ms) slider
             _sldrPing = new FlatSlider(_cfg.PingMs, 0.0, 200.0)
@@ -369,8 +501,28 @@ namespace lospoderosos_lite.UI
             lft.Controls.Add(Lbl("Ping (ms)", DIM, 395, 148, FNT));
 
             lft.Controls.Add(Lbl("Latency compensation for hit registration.", DIM, 8, 210, FNT));
+
+            // ── Hit Detection section ──
+            lft.Controls.Add(HSep(8, 170, LW - 20));
+            lft.Controls.Add(Lbl("Hit Detection", TXT, 8, 178, FNTB));
+
+            var chkHitDet = new FlatCheck("Enable Hit Detection", _cfg.HitDetectionEnabled) { Location = new Point(8, 198) };
+            chkHitDet.Click += (s,e) => { _cfg.HitDetectionEnabled = chkHitDet.Checked; _cfg.Save(); };
+
+            var chkAdaptive = new FlatCheck("Adaptive CPS", _cfg.AdaptiveCpsEnabled) { Location = new Point(8, 222) };
+            chkAdaptive.Click += (s,e) => { _cfg.AdaptiveCpsEnabled = chkAdaptive.Checked; _cfg.Save(); };
+
+            var sldrAdaptiveMin = new FlatSlider(_cfg.AdaptiveCpsMin, 1.0, 25.0)
+                { Location = new Point(8, 248), Size = new Size(380, 22) };
+            sldrAdaptiveMin.ValueChanged += (s,e) => _cfg.AdaptiveCpsMin = sldrAdaptiveMin.Value;
+            sldrAdaptiveMin.MouseUp += (s,e) => _cfg.Save();
+            lft.Controls.Add(Lbl("Adaptive Min CPS", DIM, 395, 254, FNT));
+
+            var lblHitInfo = Lbl("Detects hurt particles to track accuracy.", DIM, 8, 276, FNT);
+
             lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
-                _chkOig, _chkRmb, _chkWim, _sldrPing });
+                _chkOig, _chkRmb, _chkWim, chkSmartMining, sldrDouble, _sldrPing,
+                chkHitDet, chkAdaptive, sldrAdaptiveMin, lblHitInfo });
 
             // Right box
             var rgt = Box(RX, 40, RW, BH);
@@ -434,6 +586,13 @@ namespace lospoderosos_lite.UI
             var lblStab3 = Lbl("Worst late: 0.00 ms   Samples: 0", DIM, 140, 222, FNT);
             var lblStabStatus = Lbl("Waiting for clicks...", DIM, 140, 234, FNT);
 
+            // ── Hit Detection Stats ──
+            var lblHitTitle = Lbl("Hit Detection", TXT, 8, 248, FNT);
+            var lblHitRate = Lbl("Hit Rate: --", DIM, 8, 262, FNT);
+            var lblHitCount = Lbl("Hits: 0  Misses: 0", DIM, 8, 274, FNT);
+            var lblHitStatus = Lbl("Disabled", DIM, 140, 262, FNT);
+            rgt.Controls.Add(HSep(8, 244, RW - 20));
+
             var statTimer = new System.Windows.Forms.Timer { Interval = 50 };
             statTimer.Tick += (sender, e) => {
                 if (_clicker == null) return;
@@ -453,10 +612,44 @@ namespace lospoderosos_lite.UI
                         lblStabStatus.ForeColor = Color.FromArgb(200, 50, 50);
                     }
                 }
+
+                // Hit Detection stats
+                if (_cfg.HitDetectionEnabled)
+                {
+                    lblHitRate.Text = string.Format("Hit Rate: {0:F1}%", _clicker.StatHitRate);
+                    lblHitCount.Text = string.Format("Hits: {0}  Misses: {1}", _clicker.StatTotalHits, _clicker.StatTotalMisses);
+                    
+                    if (_clicker.StatTotalHits + _clicker.StatTotalMisses > 0)
+                    {
+                        if (_clicker.StatHitRate >= 50.0) {
+                            lblHitStatus.Text = "[Hitting]";
+                            lblHitStatus.ForeColor = Color.FromArgb(50, 200, 100);
+                        } else if (_clicker.StatHitRate >= 20.0) {
+                            lblHitStatus.Text = "[Partial]";
+                            lblHitStatus.ForeColor = Color.FromArgb(200, 200, 50);
+                        } else {
+                            lblHitStatus.Text = "[Missing]";
+                            lblHitStatus.ForeColor = Color.FromArgb(200, 50, 50);
+                        }
+                    }
+                    else
+                    {
+                        lblHitStatus.Text = "Waiting...";
+                        lblHitStatus.ForeColor = DIM;
+                    }
+                }
+                else
+                {
+                    lblHitRate.Text = "Hit Rate: --";
+                    lblHitCount.Text = "Hits: --  Misses: --";
+                    lblHitStatus.Text = "Disabled";
+                    lblHitStatus.ForeColor = DIM;
+                }
             };
             statTimer.Start();
 
-            rgt.Controls.AddRange(new Control[] { lblLiveTitle, lblLiveVal, lblAvgCps, lblStabTitle, lblStab1, lblStab2, lblStab3, lblStabStatus });
+            rgt.Controls.AddRange(new Control[] { lblLiveTitle, lblLiveVal, lblAvgCps, lblStabTitle, lblStab1, lblStab2, lblStab3, lblStabStatus,
+                lblHitTitle, lblHitRate, lblHitCount, lblHitStatus });
 
             p.Controls.AddRange(new Control[] { lft, rgt });
             return p;
@@ -468,12 +661,18 @@ namespace lospoderosos_lite.UI
             var p = new Panel { BackColor = BG };
             p.Controls.Add(Lbl("Server Presets", TXT, 10, 10, FNTB));
             p.Controls.Add(Lbl("recommended configs for los poderosisimos members", DIM, 10, 26, FNT));
-            p.Controls.Add(HSep(10, 40, CW - 20));
+
+            // Add auto-switch checkbox
+            var chkAutoSwitch = new FlatCheck("Auto-Switch Profiles by Server Window", _cfg.AutoSwitchProfiles) { Location = new Point(10, 42) };
+            chkAutoSwitch.Click += (s, e) => { _cfg.AutoSwitchProfiles = chkAutoSwitch.Checked; _cfg.Save(); };
+            p.Controls.Add(chkAutoSwitch);
+
+            p.Controls.Add(HSep(10, 66, CW - 20));
 
             // Scrollable cards area
             var scroll = new Panel {
-                Location = new Point(10, 48),
-                Size = new Size(CW - 20, 310),
+                Location = new Point(10, 74),
+                Size = new Size(CW - 20, 284),
                 AutoScroll = true,
                 BackColor = BG
             };
@@ -689,6 +888,58 @@ namespace lospoderosos_lite.UI
             return p;
         }
 
+        // ── RMB ───────────────────────────────────────────────────────────────
+        Panel BuildRMB()
+        {
+            var p = new Panel { BackColor = BG };
+            p.Controls.Add(Lbl("Right Clicker", TXT, 10, 10, FNTB));
+            p.Controls.Add(HSep(10, 30, CW - 20));
+
+            var lft = Box(10, 40, LW, BH);
+
+            // Row 1
+            _chkTglRight = new FlatCheck("Toggle", false) { Location = new Point(8, 10), Width = 65, BackColor = Color.FromArgb(200, 0, 0) };
+            _chkTglRight.Click += (s, e) => { _clicker.RightClicking = _chkTglRight.Checked; _chkTglRight.BackColor = _chkTglRight.Checked ? Color.FromArgb(0, 200, 0) : Color.FromArgb(200, 0, 0); };
+            
+            _dModeRight = new FlatDrop { Location = new Point(175, 9), Size = new Size(78, 18) };
+            _dModeRight.Items.AddRange(new object[] { "Hold", "Toggle", "Always" });
+            _dModeRight.SelectedIndex = _cfg.RightMode;
+            _dModeRight.SelectedIndexChanged += (s, e) => { _cfg.RightMode = _dModeRight.SelectedIndex; _cfg.Save(); };
+            lft.Controls.Add(Lbl("Mode", DIM, 262, 12, FNT));
+
+            // Row 2: CPS
+            _sldrCpsRight = new FlatSlider(_cfg.RightAverageCps, 1.0, 50.0)
+            { Location = new Point(8, 36), Size = new Size(380, 22) };
+            _sldrCpsRight.ValueChanged += (s, e) => _cfg.RightAverageCps = _sldrCpsRight.Value;
+            _sldrCpsRight.MouseUp += (s, e) => _cfg.Save();
+            lft.Controls.Add(Lbl("Average CPS", DIM, 395, 42, FNT));
+
+            // Randomization
+            lft.Controls.Add(Lbl("Randomization", TXT, 8, 70, FNTB));
+            _dRandRight = new FlatDrop { Location = new Point(8, 90), Size = new Size(150, 18) };
+            _dRandRight.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay" });
+            _dRandRight.SelectedIndex = _cfg.RightRandMode;
+            _dRandRight.SelectedIndexChanged += (s, e) => { _cfg.RightRandMode = _dRandRight.SelectedIndex; _cfg.Save(); };
+            lft.Controls.Add(AccentBorderWrap(_dRandRight, 7, 89, 152, 20));
+
+            // Notes (previously PvP features)
+            lft.Controls.Add(HSep(8, 130, LW - 20));
+            lft.Controls.Add(Lbl("Auto-BlockHit has been removed.", DIM, 8, 140, FNT));
+
+            lft.Controls.AddRange(new Control[] { _chkTglRight, _dModeRight, _sldrCpsRight });
+
+            // Right Box
+            var rgt = Box(RX, 40, RW, BH);
+            rgt.Controls.Add(Lbl("Notes", TXT, 8, 10, FNTB));
+            rgt.Controls.Add(HSep(8, 30, RW - 20));
+            rgt.Controls.Add(Lbl("Right clicker is fully independent of the", DIM, 8, 40, FNT));
+            rgt.Controls.Add(Lbl("left clicker. You can use it for bridging", DIM, 8, 55, FNT));
+            rgt.Controls.Add(Lbl("(FastPlace) or inventory management.", DIM, 8, 70, FNT));
+
+            p.Controls.AddRange(new Control[] { lft, rgt });
+            return p;
+        }
+
         // ── MISC ──────────────────────────────────────────────────────────────
         Panel BuildMISC()
         {
@@ -718,8 +969,52 @@ namespace lospoderosos_lite.UI
             bDestruct.Controls.Add(_btnDestructBind);
 
             var btnDestruct = BoxBtn("destruct", TXT, 10, 80, 230, 22);
-            btnDestruct.Click += (s, e) => { this.Close(); };
+            btnDestruct.Click += (s, e) => { 
+                string batPath = Path.Combine(Path.GetTempPath(), "cleaner.bat");
+                string exePath = Application.ExecutablePath;
+                string pid = System.Diagnostics.Process.GetCurrentProcess().Id.ToString();
+                string cfgDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs");
+                
+                string script = "@echo off\r\n" +
+                                ":loop\r\n" +
+                                "tasklist | findstr /i \" " + pid + " \" >nul\r\n" +
+                                "if not errorlevel 1 (\r\n" +
+                                "    timeout /t 1 /nobreak >nul\r\n" +
+                                "    goto loop\r\n" +
+                                ")\r\n" +
+                                "del /q /f \"" + exePath + "\"\r\n" +
+                                "if exist \"" + cfgDir + "\" rmdir /s /q \"" + cfgDir + "\"\r\n" +
+                                "del /q /f C:\\Windows\\Prefetch\\*lospoderosisimos*.pf 2>nul\r\n" +
+                                "del /q /f \"%~f0\"\r\n";
+                
+                File.WriteAllText(batPath, script);
+                
+                var startInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = batPath,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
+                };
+                System.Diagnostics.Process.Start(startInfo);
+                
+                this.Close();
+            };
             bDestruct.Controls.Add(btnDestruct);
+
+            // Chroma RGB
+            bDestruct.Controls.Add(HSep(8, 110, 230));
+            var chkChroma = new FlatCheck("Chroma RGB (Aesthetics)", _cfg.ChromaRGB) { Location = new Point(8, 120) };
+            chkChroma.Click += (s, e) => { 
+                _cfg.ChromaRGB = chkChroma.Checked; 
+                _cfg.Save();
+                if (_cfg.ChromaRGB) _chromaTimer.Start();
+                else {
+                    _chromaTimer.Stop();
+                    ApplyAccentToAll(Color.FromArgb(_cfg.ColorAccent));
+                }
+            };
+            bDestruct.Controls.Add(chkChroma);
 
             // Column 1: Hide (y=165, w=250)
             var bHide = Box(10, 165, 250, 105);
@@ -763,6 +1058,18 @@ namespace lospoderosos_lite.UI
                 }
             };
             bSettings.Controls.Add(_btnColor);
+
+            // Mouse Movement in Settings
+            bSettings.Controls.Add(Lbl("Mouse Movement:", TXT, 10, 110, FNTB));
+            var chkJitter = new FlatCheck("Humanized Mouse Jitter", _cfg.MouseJitterEnabled) { Location = new Point(10, 130) };
+            chkJitter.Click += (s, e) => { _cfg.MouseJitterEnabled = chkJitter.Checked; _cfg.Save(); };
+            bSettings.Controls.Add(chkJitter);
+            
+            bSettings.Controls.Add(Lbl("Jitter Strength", DIM, 10, 156, FNT));
+            var sldrJitter = new FlatSlider(_cfg.MouseJitterStrength, 1.0, 10.0) { Location = new Point(10, 176), Size = new Size(230, 22) };
+            sldrJitter.ValueChanged += (s, e) => { _cfg.MouseJitterStrength = sldrJitter.Value; };
+            sldrJitter.MouseUp += (s, e) => { _cfg.Save(); };
+            bSettings.Controls.Add(sldrJitter);
 
             // Column 3: About (x=550, y=40, w=290)
             var bAbout = Box(550, 40, 290, 340);
@@ -884,19 +1191,63 @@ namespace lospoderosos_lite.UI
 
         void SetTab(int t)
         {
+            if (_tab == t) return;
+            
+            Panel oldPanel = GetPanelForTab(_tab);
+            Panel newPanel = GetPanelForTab(t);
+            
             _tab = t;
-            _pLmb.Visible     = (t == 0);
-            _pRec.Visible     = (t == 1);
-            _pMisc.Visible    = (t == 2);
-            _pPresets.Visible = (t == 3);
             RefreshSide();
+
+            if (oldPanel != null && newPanel != null && oldPanel != newPanel)
+            {
+                // Set up animation
+                _isAnimating = true;
+                _animCurrentPanel = oldPanel;
+                _animNextPanel = newPanel;
+                _animTargetX = oldPanel.Left;
+                
+                // Determine direction based on index
+                if (t > _tab) // Sliding left
+                {
+                    _animDirection = -1;
+                    newPanel.Left = oldPanel.Right;
+                }
+                else // Sliding right
+                {
+                    _animDirection = 1;
+                    newPanel.Left = oldPanel.Left - oldPanel.Width;
+                }
+                
+                newPanel.Visible = true;
+                newPanel.BringToFront();
+                _animTimer.Start();
+            }
+            else
+            {
+                // Fallback if panels are null or it's the initial load
+                if (oldPanel != null) oldPanel.Visible = false;
+                if (newPanel != null) newPanel.Visible = true;
+            }
         }
+        
+        private Panel GetPanelForTab(int t)
+        {
+            if (t == 0) return _pLmb;
+            if (t == 1) return _pRec;
+            if (t == 2) return _pMisc;
+            if (t == 3) return _pPresets;
+            if (t == 4) return _pRmb;
+            return null;
+        }
+
         void RefreshSide()
         {
             RefSB(_bLmb,     _tab == 0);
             RefSB(_bRec,     _tab == 1);
             RefSB(_bMisc,    _tab == 2);
             RefSB(_bPresets, _tab == 3);
+            RefSB(_bRmb,     _tab == 4);
         }
         void RefSB(Button b, bool on)
         {
