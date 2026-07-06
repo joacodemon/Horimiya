@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 // OpenTK dependencies removed (not available in this build environment)
 using lospoderosos_lite.Config;
 using lospoderosos_lite.Modules;
@@ -14,6 +15,11 @@ namespace lospoderosos_lite.UI
     [Injectable(false)]
     public class MainForm : Form
     {
+        [DllImport("user32.dll")]
+        public static extern uint SetWindowDisplayAffinity(IntPtr hwnd, uint dwAffinity);
+        const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+        const uint WDA_NONE = 0;
+
         // Palette
         static readonly Color BG   = Color.FromArgb(10, 10, 10);
         static readonly Color SBG  = Color.FromArgb(16, 16, 16);
@@ -366,7 +372,54 @@ namespace lospoderosos_lite.UI
             bX.Click += (s,e) => Close();
             var bMin = SysBtn("-", 898, 0);
             bMin.Click += (s,e) => WindowState = FormWindowState.Minimized;
-            tb.Controls.AddRange(new Control[] { tbLbl, bX, bMin });
+            
+            // Profile selector
+            var lblProf = Lbl("Profile:", DIM, 250, 7, FNT);
+            var dropProf = new FlatDrop() { Location = new Point(300, 4), Size = new Size(120, 18) };
+            
+            Action refreshProfiles = () => {
+                dropProf.Items.Clear();
+                foreach (var p in AppConfig.GetAvailableProfiles()) dropProf.Items.Add(p);
+            };
+            refreshProfiles();
+            
+            var btnSaveProf = new FlatButton("Save", Color.FromArgb(180, 180, 180)) { Location = new Point(430, 4), Size = new Size(50, 18) };
+            btnSaveProf.Click += (s,e) => { _cfg.Save(dropProf.Text); refreshProfiles(); };
+            
+            var btnNewProf = new FlatButton("New", Color.FromArgb(180, 180, 180)) { Location = new Point(485, 4), Size = new Size(50, 18) };
+            btnNewProf.Click += (s,e) => {
+                Form prompt = new Form() { Width = 300, Height = 150, Text = "New Profile" };
+                TextBox textBox = new TextBox() { Left = 50, Top = 20, Width = 200 };
+                Button confirmation = new Button() { Text = "Ok", Left = 100, Width = 100, Top = 50, DialogResult = DialogResult.OK };
+                prompt.Controls.Add(textBox); prompt.Controls.Add(confirmation);
+                prompt.AcceptButton = confirmation;
+                if (prompt.ShowDialog() == DialogResult.OK && !string.IsNullOrWhiteSpace(textBox.Text)) {
+                    _cfg.Save(textBox.Text);
+                    refreshProfiles();
+                    dropProf.Text = textBox.Text;
+                }
+            };
+            
+            dropProf.SelectedIndexChanged += (s,e) => {
+                if (dropProf.SelectedItem != null) {
+                    var loaded = AppConfig.Load(dropProf.SelectedItem.ToString());
+                    if (loaded != null) {
+                        // Apply properties to current _cfg instance to propagate changes globally
+                        var props = typeof(AppConfig).GetFields();
+                        foreach (var prop in props) {
+                            if (prop.Name != "Instance")
+                                prop.SetValue(_cfg, prop.GetValue(loaded));
+                        }
+                        // Refresh UI values manually
+                        _sldrCps.Value = _cfg.AverageCps;
+                        _chkTgl.Checked = _cfg.Mode == 1;
+                        if (_dRand != null) _dRand.SelectedIndex = _cfg.RandMode;
+                        if (_chkOig != null) _chkOig.Checked = _cfg.OnlyInGame;
+                    }
+                }
+            };
+            
+            tb.Controls.AddRange(new Control[] { tbLbl, bX, bMin, lblProf, dropProf, btnSaveProf, btnNewProf });
 
             // Sidebar  (left column, between title bar and footer)
             var sb = new Panel { BackColor = SBG };
@@ -478,13 +531,10 @@ namespace lospoderosos_lite.UI
             _chkOig  = new FlatCheck("Only In Game",    _cfg.OnlyInGame)  { Location = new Point(8, 66)  };
             _chkRmb  = new FlatCheck("RMB-Lock",        _cfg.RmbLock)     { Location = new Point(140, 66) };
             _chkWim  = new FlatCheck("Smart Clicker (Pause in Menus)", !_cfg.WorkInMenus) { Location = new Point(8, 90) };
-            var chkSmartMining = new FlatCheck("Smart Mining Mode", _cfg.SmartMiningEnabled) { Location = new Point(220, 90) };
-            
             _chkOig.Click  += (s,e) => _cfg.OnlyInGame  = _chkOig.Checked;
             _chkRmb.Click  += (s,e) => _cfg.RmbLock     = _chkRmb.Checked;
             // WorkInMenus is true if Smart Clicker is OFF
             _chkWim.Click  += (s,e) => _cfg.WorkInMenus = !_chkWim.Checked;
-            chkSmartMining.Click += (s,e) => { _cfg.SmartMiningEnabled = chkSmartMining.Checked; _cfg.Save(); };
 
             // Double Click Chance slider
             var sldrDouble = new FlatSlider(_cfg.DoubleClickChance, 0.0, 20.0)
@@ -519,25 +569,28 @@ namespace lospoderosos_lite.UI
             lft.Controls.Add(Lbl("Adaptive Min CPS", DIM, 395, 254, FNT));
 
             var lblHitInfo = Lbl("Detects hurt particles to track accuracy.", DIM, 8, 276, FNT);
+            
+            // ── Burst Clicks section ──
+            lft.Controls.Add(HSep(8, 295, LW - 20));
+            var chkBurst = new FlatCheck("Burst Clicks (Combo Spikes)", _cfg.BurstEnabled) { Location = new Point(8, 305) };
+            chkBurst.Click += (s,e) => { _cfg.BurstEnabled = chkBurst.Checked; _cfg.Save(); };
+            
+            var sldrBurstDur = new FlatSlider(_cfg.BurstDurationMs, 50.0, 1000.0)
+                { Location = new Point(220, 305), Size = new Size(168, 22) };
+            sldrBurstDur.ValueChanged += (s,e) => _cfg.BurstDurationMs = (int)sldrBurstDur.Value;
+            sldrBurstDur.MouseUp += (s,e) => _cfg.Save();
+            lft.Controls.Add(Lbl("Duration (ms)", DIM, 395, 310, FNT));
 
             lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
-                _chkOig, _chkRmb, _chkWim, chkSmartMining, sldrDouble, _sldrPing,
-                chkHitDet, chkAdaptive, sldrAdaptiveMin, lblHitInfo });
+                _chkOig, _chkRmb, _chkWim, sldrDouble, _sldrPing,
+                chkHitDet, chkAdaptive, sldrAdaptiveMin, lblHitInfo, chkBurst, sldrBurstDur });
 
             // Right box
             var rgt = Box(RX, 40, RW, BH);
-            rgt.Controls.Add(Lbl("Click Sound", TXT, 8, 10, FNT));
-            _dSnd = new FlatDrop { Size = new Size(RW - 20, 18) };
-            LoadSounds();
-            _dSnd.SelectedIndexChanged += (s,e) => { if (_dSnd.SelectedItem != null) _cfg.Sound = _dSnd.SelectedItem.ToString(); };
-            rgt.Controls.Add(AccentBorderWrap(_dSnd, 7, 27, RW - 18, 20));
-            rgt.Controls.Add(Lbl("Place .wav files in", DIM, 8, 52, FNT));
-            rgt.Controls.Add(Lbl("%USERPROFILE%\\XVA\\resource", DIM, 8, 66, FNT));
-            rgt.Controls.Add(HSep(8, 86, RW - 20));
-            rgt.Controls.Add(Lbl("Lite build", TXT, 8, 94, FNTB));
-            rgt.Controls.Add(Lbl("Recorder available from REC tab.", DIM, 8, 112, FNT));
-            rgt.Controls.Add(HSep(8, 132, RW - 20));
-            rgt.Controls.Add(Lbl("Randomization", TXT, 8, 140, FNTB));
+            rgt.Controls.Add(Lbl("Lite build", TXT, 8, 10, FNTB));
+            rgt.Controls.Add(Lbl("Recorder available from REC tab.", DIM, 8, 28, FNT));
+            rgt.Controls.Add(HSep(8, 48, RW - 20));
+            rgt.Controls.Add(Lbl("Randomization", TXT, 8, 56, FNTB));
             _dRand = new FlatDrop { Size = new Size(RW - 20, 18) };
             _dRand.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay", "Manual" });
             _dRand.SelectedIndex = _cfg.RandMode;
@@ -808,23 +861,7 @@ namespace lospoderosos_lite.UI
         }
 
 
-        void LoadSounds()
-        {
-            _dSnd.Items.Clear();
-            _dSnd.Items.Add("None");
-            string d1 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "XVA", "resource");
-            if (Directory.Exists(d1))
-                foreach (string f in Directory.GetFiles(d1, "*.wav"))
-                    _dSnd.Items.Add(Path.GetFileName(f));
-            string d2 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "lospoderosos", "resource");
-            if (Directory.Exists(d2))
-                foreach (string f in Directory.GetFiles(d2, "*.wav"))
-                    if (!_dSnd.Items.Contains(Path.GetFileName(f)))
-                        _dSnd.Items.Add(Path.GetFileName(f));
-            _dSnd.SelectedIndex = 0;
-            for (int i = 0; i < _dSnd.Items.Count; i++)
-                if (_dSnd.Items[i].ToString() == _cfg.Sound) { _dSnd.SelectedIndex = i; break; }
-        }
+
 
         // ── REC ───────────────────────────────────────────────────────────────
         Panel BuildREC()
@@ -1017,7 +1054,7 @@ namespace lospoderosos_lite.UI
             bDestruct.Controls.Add(chkChroma);
 
             // Column 1: Hide (y=165, w=250)
-            var bHide = Box(10, 165, 250, 105);
+            var bHide = Box(10, 165, 250, 155);
             bHide.Controls.Add(Lbl("hide", TXT, 10, 8, FNTB));
             
             var chkHideTask = new FlatCheck("Hide from taskbar", _cfg.HideTaskbar) { Location = new Point(10, 30) };
@@ -1031,9 +1068,29 @@ namespace lospoderosos_lite.UI
             chkStreamer.Click += (s, e) => { _cfg.StreamerMode = chkStreamer.Checked; };
             bHide.Controls.Add(chkStreamer);
 
-            _btnHide = BoxBtn(_cfg.HideBind == 0 ? "hide" : "hide bind: " + KeyName(_cfg.HideBind), TXT, 10, 75, 230, 22);
+            var chkGhost = new FlatCheck("Ghost Window (OBS Bypass)", false) { Location = new Point(10, 70) };
+            chkGhost.Click += (s, e) => {
+                if (chkGhost.Checked) SetWindowDisplayAffinity(this.Handle, WDA_EXCLUDEFROMCAPTURE);
+                else SetWindowDisplayAffinity(this.Handle, WDA_NONE);
+            };
+            bHide.Controls.Add(chkGhost);
+
+            _btnHide = BoxBtn(_cfg.HideBind == 0 ? "hide" : "hide bind: " + KeyName(_cfg.HideBind), TXT, 10, 95, 230, 22);
             _btnHide.Click += (s, e) => { _bindDestruct = false; BeginBind(true); };
             bHide.Controls.Add(_btnHide);
+
+            var btnSpoof = BoxBtn("spoof process (task manager)", TXT, 10, 122, 230, 22);
+            btnSpoof.Click += (s, e) => {
+                try {
+                    string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                    string target = Path.Combine(Path.GetTempPath(), "svchost.exe");
+                    if (File.Exists(target)) File.Delete(target);
+                    File.Copy(exe, target);
+                    System.Diagnostics.Process.Start(target);
+                    Environment.Exit(0);
+                } catch { MessageBox.Show("Failed to spoof process."); }
+            };
+            bHide.Controls.Add(btnSpoof);
 
             // Column 2: Settings (x=270, y=40, w=270)
             var bSettings = Box(270, 40, 270, 340);
@@ -1481,7 +1538,6 @@ namespace lospoderosos_lite.UI
             if (_btnHide != null) _btnHide.Text = _cfg.HideBind  == 0 ? "Click to Bind" : "Key: " + KeyName(_cfg.HideBind);
 
             if (_cfg.DiscordRpc) _misc.StartRpc(); else _misc.StopRpc();
-            LoadSounds();
         }
 
         void LoadBackgroundImage()

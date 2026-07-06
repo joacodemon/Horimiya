@@ -18,8 +18,6 @@ namespace lospoderosos_lite.Modules
         private readonly Random _rng = new Random();
         private Thread _thread;
         private volatile bool _running = false;
-        private SoundPlayer _soundPlayer;
-        private string _cachedSoundPath;
 
         // Performance cache fields
         private bool _lastFocusResult = false;
@@ -31,9 +29,6 @@ namespace lospoderosos_lite.Modules
         private Stopwatch _cursorCheckTimer = new Stopwatch();
         private const int CURSOR_CHECK_INTERVAL_MS = 50;
 
-        private Thread _soundThread;
-        private volatile bool _soundPending = false;
-        private volatile bool _soundRunning = false;
 
         private readonly StringBuilder _titleBuffer = new StringBuilder(256);
 
@@ -63,16 +58,11 @@ namespace lospoderosos_lite.Modules
 
             _thread = new Thread(ClickLoop) { IsBackground = true, Priority = ThreadPriority.Highest };
             _thread.Start();
-
-            _soundRunning = true;
-            _soundThread = new Thread(SoundLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal };
-            _soundThread.Start();
         }
 
         public void Stop()
         {
             _running = false;
-            _soundRunning = false;
             Win32.timeEndPeriod(1);
         }
 
@@ -244,17 +234,14 @@ namespace lospoderosos_lite.Modules
                     if (isButterfly)
                     {
                         PerformClick(cursorShown);
-                        PlayClickSound();
                         Thread.SpinWait(50);
                         int microGap = _rng.Next(10, 35);
                         Thread.Sleep(microGap);
                         PerformClick(cursorShown);
-                        PlayClickSound();
                     }
                     else
                     {
                         PerformClick(cursorShown);
-                        PlayClickSound();
                     }
                 }
 
@@ -369,60 +356,5 @@ namespace lospoderosos_lite.Modules
             return _lastCursorVisible;
         }
 
-        private void SoundLoop()
-        {
-            while (_soundRunning)
-            {
-                if (_soundPending)
-                {
-                    _soundPending = false;
-                    try
-                    {
-                        if (_cfg.Sound != "None")
-                        {
-                            string path = GetSoundPath(_cfg.Sound);
-                            if (path != null)
-                            {
-                                if (_soundPlayer == null || _cachedSoundPath != path)
-                                {
-                                    if (_soundPlayer != null) _soundPlayer.Dispose();
-                                    _soundPlayer = new SoundPlayer(path);
-                                    _soundPlayer.Load();
-                                    _cachedSoundPath = path;
-                                }
-                                _soundPlayer.Play();
-                            }
-                        }
-                    }
-                    catch { }
-                }
-                else
-                {
-                    Thread.Sleep(2);
-                }
-            }
-            if (_soundPlayer != null) _soundPlayer.Dispose();
-        }
-
-        private void PlayClickSound()
-        {
-            if (_cfg.Sound != "None")
-            {
-                _soundPending = true;
-            }
-        }
-
-        private string GetSoundPath(string soundName)
-        {
-            string d1 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "XVA", "resource");
-            string path1 = Path.Combine(d1, soundName);
-            if (File.Exists(path1)) return path1;
-            
-            string d2 = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "lospoderosos", "resource");
-            string path2 = Path.Combine(d2, soundName);
-            if (File.Exists(path2)) return path2;
-            
-            return null;
-        }
     }
 }

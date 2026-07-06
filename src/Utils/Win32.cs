@@ -67,6 +67,12 @@ namespace lospoderosos_lite.Utils
             public IntPtr dwExtraInfo;
         }
 
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
         // ── Click helpers: use mouse_event for reliable aim-assist compatible clicks ─────────
         // mouse_event with dx=0, dy=0 sends ONLY button events without touching cursor position,
         // so external aim assists can freely move the mouse without interference.

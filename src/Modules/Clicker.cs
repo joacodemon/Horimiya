@@ -23,14 +23,12 @@ namespace lospoderosos_lite.Modules
     public class Clicker
     {
         private readonly AppConfig _cfg;
-        private readonly HitDetector _hitDetector;
+
         private readonly Random _rng = new Random();
         private bool _lastInvResult = false;
         private Stopwatch _invCheckTimer = new Stopwatch();
         private Thread _thread;
         private volatile bool _running = false;
-        private SoundPlayer _soundPlayer;
-        private string _cachedSoundPath;
 
         // Refill state tracking
         private int _refillClickCount = 0;
@@ -42,7 +40,42 @@ namespace lospoderosos_lite.Modules
         private double _customTargetCps = 15.0; // CPS picked from the weighted distribution
         private double _customCurrentCps = 15.0; // smoothed value drifting toward target
         private int    _customStreakLeft  = 0;    // clicks remaining at current target before re-rolling
-private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calculation
+        private double _stableCps = double.NaN; // smoothed CPS for ultra-stable calculation
+
+        // ── Pacer State ──
+        private long m_counter = 0;
+        private double m_jitterValue = 0.0;
+        private double m_jitterTarget = 0.0;
+        private int m_jitterStep = 0;
+        private int m_jitterSteps = 12;
+        private double m_lastIntervalMs = 0.0;
+        private double m_lastDownMs = 0.0;
+        private double m_intervalEma = 0.0;
+        private double m_downEma = 0.0;
+
+        private double NextUniform(double minV, double maxV) { return minV + _rng.NextDouble() * (maxV - minV); }
+        private double NextTriangular(double minV, double maxV) { 
+            double u1 = NextUniform(0.0, 1.0); 
+            double u2 = NextUniform(0.0, 1.0); 
+            return minV + (maxV - minV) * (0.5 * (u1 + u2)); 
+        }
+        private double NextSmoothedJitter() {
+            if (m_jitterStep >= m_jitterSteps) {
+                m_jitterTarget = NextUniform(-1.0, 1.0);
+                m_jitterSteps = (int)NextUniform(8.0, 16.0);
+                m_jitterStep = 0;
+            }
+            m_jitterValue += (m_jitterTarget - m_jitterValue) * 0.18;
+            m_jitterStep++;
+            return m_jitterValue;
+        }
+        private double ClampChange(double value, double lastValue, double maxDelta) {
+            if (lastValue <= 0.0) return value;
+            double delta = value - lastValue;
+            if (delta > maxDelta) return lastValue + maxDelta;
+            if (delta < -maxDelta) return lastValue - maxDelta;
+            return value;
+        }
 
         // ── Performance cache fields ──
         // Cache Minecraft focus check to avoid StringBuilder alloc + GetWindowText every tick
@@ -56,10 +89,6 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
         private Stopwatch _cursorCheckTimer = new Stopwatch();
         private const int CURSOR_CHECK_INTERVAL_MS = 50; // Re-check cursor every 50ms
 
-        // Sound playback thread to avoid blocking the click thread
-        private Thread _soundThread;
-        private volatile bool _soundPending = false;
-        private volatile bool _soundRunning = false;
 
         // Reusable StringBuilder for window title checks (avoids GC pressure)
         private readonly StringBuilder _titleBuffer = new StringBuilder(256);
@@ -84,16 +113,13 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
         // Hit detection: async check scheduling
         private volatile IntPtr _hitCheckHwnd = IntPtr.Zero;
         private volatile bool _hitCheckPending = false;
-        private Thread _hitCheckThread;
-        private volatile bool _hitCheckRunning = false;
         
         // Right clicker thread
         private Thread _rightThread;
 
-        public Clicker(AppConfig cfg, HitDetector hitDetector)
+        public Clicker(AppConfig cfg)
         {
             _cfg = cfg;
-            _hitDetector = hitDetector;
         }
 
         // Returns the CPS to aim for this tick. If ForceExactCps is enabled, returns the exact configured AverageCps.
@@ -120,25 +146,12 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
 
             _rightThread = new Thread(RightClickLoop) { IsBackground = true, Priority = ThreadPriority.Highest };
             _rightThread.Start();
-
-            // Start background sound thread
-            _soundRunning = true;
-            _soundThread = new Thread(SoundLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal };
-            _soundThread.Start();
-
-            // Start hit detection check thread
-            _hitCheckRunning = true;
-            _hitCheckThread = new Thread(HitCheckLoop) { IsBackground = true, Priority = ThreadPriority.BelowNormal };
-            _hitCheckThread.Start();
         }
 
         public void Stop()
         {
             _running = false;
-            _soundRunning = false;
-            _hitCheckRunning = false;
             Win32.timeEndPeriod(1);
-            _hitDetector.Reset();
         }
 
         private void ApplyMouseJitter()
@@ -166,6 +179,15 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
             long physicalLeftDownStart = 0;
             bool physicalLeftWasDown = false;
 
+            Stopwatch burstTimer = new Stopwatch();
+            burstTimer.Start();
+            bool inBurst = false;
+            double nextBurstTime = 3000;
+            double burstEndTime = 0;
+
+            // Track when we're actively clicking so we can reset the scheduler on re-entry
+            bool _wasActiveLastTick = false;
+
             while (_running)
             {
                 bool isPhysicalDown = Win32.IsLeftDown;
@@ -173,29 +195,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 else if (!isPhysicalDown) { physicalLeftDownStart = 0; }
                 physicalLeftWasDown = isPhysicalDown;
 
-                if (_cfg.SmartMiningEnabled && isPhysicalDown && physicalLeftDownStart > 0 && sw.ElapsedMilliseconds - physicalLeftDownStart > 500)
-                {
-                    IntPtr fgndWnd = Win32.GetForegroundWindow();
-                    bool curShown = CachedIsCursorVisible();
-                    if (!curShown && CachedIsMinecraftFocused(fgndWnd))
-                    {
-                        if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                        
-                        IntPtr clickLParam = Win32.PostLeftDown(fgndWnd);
-                        while (_running && Win32.IsLeftDown)
-                        {
-                            Thread.Sleep(15);
-                        }
-                        if (clickLParam != IntPtr.Zero)
-                        {
-                            Win32.PostLeftUpFresh(fgndWnd, clickLParam);
-                        }
-                        physicalLeftWasDown = false;
-                        physicalLeftDownStart = 0;
-                        nextClickTick = sw.ElapsedTicks;
-                        continue;
-                    }
-                }
+
                 // Si Clicking esta OFF, dormir
                 if (!Clicking)
                 {
@@ -204,7 +204,20 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
                     _wasBbActive = false;
-                    _hitDetector.Reset();
+                    _wasActiveLastTick = false;
+                    nextClickTick = sw.ElapsedTicks; // reset scheduler to avoid CPS burst on re-enable
+                    continue;
+                }
+
+                // ── Focus check FIRST (before any global input) ──
+                // Must check BEFORE Toggle/Always globalHold so we never send global clicks to desktop.
+                IntPtr foregroundWnd = Win32.GetForegroundWindow();
+                if (!CachedIsMinecraftFocused(foregroundWnd))
+                {
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
+                    Thread.Sleep(10);
+                    _wasActiveLastTick = false;
+                    nextClickTick = sw.ElapsedTicks; // reset scheduler — prevent CPS spike on refocus
                     continue;
                 }
 
@@ -220,13 +233,14 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(1); // reduced sleep to keep high CPS
                     nextClickTick = sw.ElapsedTicks;
+                    _wasActiveLastTick = false;
                     continue;
                 }
                 else if (_cfg.Mode != 0) // Toggle o Always
                 {
                     // En Toggle/Always el usuario no está sosteniendo el click físico.
                     // XClient necesita ver el LMB presionado para activar el aim assist.
-                    // Mandamos un DOWN global para "engañar" al aim assist.
+                    // Solo enviamos el DOWN si Minecraft está en foco (chequeado arriba).
                     if (!globalHoldActive)
                     {
                         Win32.SendLeftDownNative();
@@ -234,20 +248,19 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     }
                 }
 
+                // Reset scheduler if we're re-entering active clicking after an idle period
+                // This prevents the tick accumulation from causing a CPS burst.
+                if (!_wasActiveLastTick)
+                {
+                    nextClickTick = sw.ElapsedTicks;
+                    _wasActiveLastTick = true;
+                }
+
                 // ── RMB-Lock ──
                 if (_cfg.RmbLock && Win32.IsRightDown)
                 {
                     if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
                     Thread.Sleep(5);
-                    continue;
-                }
-
-                // ── Focus check (cached) ──
-                IntPtr foregroundWnd = Win32.GetForegroundWindow();
-                if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
-                {
-                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                    Thread.Sleep(10);
                     continue;
                 }
 
@@ -289,90 +302,123 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     }
                 }
 
-                // ── Randomization Mode ──
+                // ── Advanced Pacer Randomization ──
                 double targetCps = GetCurrentCps();
 
-                // ── Adaptive CPS: reduce CPS when hit rate is low ──
-                double adaptiveMultiplier = _hitDetector.GetAdaptiveCpsMultiplier();
-                targetCps *= adaptiveMultiplier;
+                if (_cfg.BurstEnabled && shouldClick && isPhysicalDown)
+                {
+                    if (!inBurst && burstTimer.ElapsedMilliseconds >= nextBurstTime)
+                    {
+                        inBurst = true;
+                        burstEndTime = burstTimer.ElapsedMilliseconds + _cfg.BurstDurationMs;
+                    }
+                    else if (inBurst && burstTimer.ElapsedMilliseconds >= burstEndTime)
+                    {
+                        inBurst = false;
+                        nextBurstTime = burstTimer.ElapsedMilliseconds + _cfg.BurstIntervalMin * 1000.0 + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
+                    }
+
+                    if (inBurst)
+                    {
+                        targetCps = Math.Min(30.0, targetCps + 6.0 + _rng.NextDouble() * 5.0);
+                    }
+                }
+                else if (!isPhysicalDown)
+                {
+                    burstTimer.Restart();
+                    inBurst = false;
+                    nextBurstTime = _cfg.BurstIntervalMin * 1000.0 + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
+                }
 
                 bool isButterfly = false;
                 double delayMs;
+                double downMs = 2.0;
+                double pingMs = 0;
 
                 if (isRefilling)
                 {
                     delayMs = 1000.0 / 20.0;
                 }
-                else if (_cfg.RandMode == 3)
-                {
-                    double sumWeights = 0;
-                    for (int i = 0; i < 25; i++) sumWeights += _cfg.CustomCpsWeights[i];
-                    if (sumWeights > 0 && _customStreakLeft <= 0)
-                    {
-                        double roll = _rng.NextDouble() * sumWeights;
-                        double acc  = 0;
-                        for (int i = 0; i < 25; i++)
-                        {
-                            acc += _cfg.CustomCpsWeights[i];
-                            if (roll <= acc) { _customTargetCps = i + 1; break; }
-                        }
-                        _customStreakLeft = _rng.Next(3, 9);
-                    }
-                    _customStreakLeft--;
-                    _customCurrentCps += (_customTargetCps - _customCurrentCps) * 0.35;
-                    double customNoise = NextGaussian() * 0.20;
-                    double finalCustomCps = Math.Max(1.0, _customCurrentCps + customNoise);
-                    delayMs = 1000.0 / finalCustomCps;
-                    delayMs += (_rng.NextDouble() * 3.0 - 1.5);
-                }
-                else if (_cfg.RandMode == 2) // NoDelay (Ultra-stable, minimal jitter)
-                {
-                    double fl = Math.Floor(targetCps);
-                    double roll = _rng.NextDouble();
-                    double actualCps;
-                    
-                    // 80% chance for exact CPS, 15% for +1, 5% for -1 to bypass basic static checks
-                    if      (roll < 0.80) actualCps = fl;
-                    else if (roll < 0.95) actualCps = fl + 1.0;
-                    else                  actualCps = Math.Max(1.0, fl - 1.0);
-                    
-                    delayMs = 1000.0 / actualCps;
-                }
-                else if (_cfg.RandMode == 1) // Butterfly (Realistic double clicking)
-                {
-                    // Butterfly clicking involves two fingers, often resulting in alternating delays
-                    // and occasional very tight double clicks.
-                    double drop = _rng.NextDouble() * 1.5; // Slight drop in CPS occasionally
-                    double butterflyCps = Math.Max(5.0, targetCps - drop);
-                    
-                    // We generate a base delay for half the CPS (since we double click)
-                    delayMs = 2000.0 / butterflyCps; 
-                    
-                    // Add natural hand fluctuation
-                    delayMs += (NextGaussian() * 1.5); 
-                    
-                    isButterfly = true;
-                }
                 else
                 {
-                // ----- Versión ultra‑estable de CPS -----
-                // Reduce jitter y aplica suavizado exponencial (EMA) para mayor consistencia
-                double jitter = NextGaussian() * 0.05; // ruido pequeño
-                double rawCps = targetCps + jitter;
-                double lower = targetCps * 0.97;
-                double upper = targetCps * 1.03;
-                rawCps = Math.Max(lower, Math.Min(upper, rawCps));
-                rawCps = Math.Max(1.0, rawCps);
-                rawCps = Math.Max(targetCps - 1.0, rawCps);
-                // EMA smoothing (alpha = 0.1)
-                if (double.IsNaN(_stableCps)) _stableCps = rawCps;
-                else _stableCps = _stableCps * 0.9 + rawCps * 0.1;
-                double finalCps = _stableCps;
-                // Calcular delay en milisegundos
-                delayMs = 1000.0 / finalCps;
-                // Aplicar jitter menor al delay
-                delayMs += (_rng.NextDouble() * 0.5 - 0.25); // ±0.25 ms
-                // ----- Fin de versión estabilizada -----
+                    double cpsMin = targetCps - 0.5;
+                    double cpsMax = targetCps + 0.5;
+                    if (cpsMin < 5.0) cpsMin = 5.0;
+                    if (cpsMax < cpsMin + 0.2) cpsMax = cpsMin + 0.2;
+                    if (cpsMax > 30.0) cpsMax = 30.0;
+
+                    double cps = NextTriangular(cpsMin, cpsMax);
+                    double interval = 1000.0 / cps;
+
+                    pingMs = _cfg.PingMs;
+                    double ping = Math.Max(20.0, Math.Min(200.0, pingMs));
+                    double pingT = (ping - 20.0) / 180.0;
+
+                    double baseRatio = 0.42;
+                    double jitterAmplitude = 0.38;
+                    double maxIntervalDelta = 0.28;
+                    double intervalSmoothing = 0.12;
+                    double downSmoothing = 0.18;
+
+                    if (_cfg.RandMode == 0) // Jitter / Smooth
+                    {
+                        baseRatio = 0.46;
+                        jitterAmplitude = 0.24;
+                        maxIntervalDelta = 0.22;
+                        intervalSmoothing = 0.16;
+                        downSmoothing = 0.22;
+                    }
+                    else if (_cfg.RandMode == 2) // NoDelay / Competitive
+                    {
+                        baseRatio = 0.40;
+                        jitterAmplitude = 0.16;
+                        maxIntervalDelta = 0.18;
+                        intervalSmoothing = 0.10;
+                        downSmoothing = 0.16;
+                    }
+                    else if (_cfg.RandMode == 1) // Butterfly
+                    {
+                        isButterfly = true;
+                    }
+
+                    baseRatio += pingT * 0.03;
+                    jitterAmplitude *= (1.0 - 0.55 * pingT);
+
+                    double drift = Math.Sin(m_counter * 0.028) * 0.08;
+                    interval += drift;
+
+                    if (m_intervalEma <= 0.0) m_intervalEma = interval;
+                    else m_intervalEma = m_intervalEma * (1.0 - intervalSmoothing) + interval * intervalSmoothing;
+
+                    interval = m_intervalEma;
+                    interval = ClampChange(interval, m_lastIntervalMs, maxIntervalDelta);
+
+                    double down = interval * baseRatio;
+                    double jitter = NextSmoothedJitter() * jitterAmplitude;
+                    down += jitter;
+
+                    double minDown = Math.Max(5.5, interval * 0.34);
+                    double maxDown = interval - 0.6;
+                    if (maxDown < minDown) maxDown = minDown + 0.2;
+                    down = Math.Max(minDown, Math.Min(maxDown, down));
+
+                    if (m_downEma <= 0.0) m_downEma = down;
+                    else m_downEma = m_downEma * (1.0 - downSmoothing) + down * downSmoothing;
+
+                    down = ClampChange(m_downEma, m_lastDownMs, 0.30);
+
+                    double gap = interval - down;
+                    if (gap < 0.4) {
+                        gap = 0.4;
+                        down = interval - gap;
+                    }
+
+                    m_lastIntervalMs = interval;
+                    m_lastDownMs = down;
+                    m_counter++;
+
+                    delayMs = interval;
+                    downMs = down;
                 }
 
                 // ── Ping-Aware Timing / Latency Compensation ──
@@ -381,7 +427,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 // para que llegue justo antes del siguiente procesamiento de tick del servidor (50ms),
                 // maximizando la consistencia en los combos.
                 
-                double pingMs = _cfg.PingMs;
+                pingMs = _cfg.PingMs;
                 if (pingMs > 0)
                 {
                     // Asumimos un ciclo de tick de servidor de 50ms
@@ -419,11 +465,9 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     int microGap = _rng.Next(4, 13);
                     PerformClick(cursorShown, isRefilling, foregroundWnd);
                     ApplyMouseJitter();
-                    PlayClickSound();
                     Thread.Sleep(microGap);
                     PerformClick(cursorShown, isRefilling, foregroundWnd);
                     ApplyMouseJitter();
-                    PlayClickSound();
                     nextClickTick -= (long)(microGap * Stopwatch.Frequency / 1000.0);
                 }
                 else if (cursorShown || isRefilling)
@@ -431,7 +475,6 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     // Inventario / Refill: click tradicional rapido
                     PerformClick(cursorShown, isRefilling, foregroundWnd);
                     ApplyMouseJitter();
-                    PlayClickSound();
                 }
                 else
                 {
@@ -441,9 +484,6 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     // Resultado: XClient sigue leyendo el mouse FÍSICO del usuario
                     // (con GetAsyncKeyState) para el aim assist, mientras que Minecraft
                     // recibe los clicks rápidos del autoclicker sin enterarse de la diferencia.
-                    
-                    // ── Hit Detection: capture baseline BEFORE click ──
-                    _hitDetector.CaptureBaseline(foregroundWnd);
                     
                     IntPtr clickLParam = IntPtr.Zero;
                     if (_isCheatbreaker)
@@ -460,9 +500,8 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     if (clickLParam != IntPtr.Zero)
                     {
                         ApplyMouseJitter();
-                        PlayClickSound();
-
-                        // W-Tap
+    
+                    // WTap / STap / ShiftTap (Velocity Simulation)
                     if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                     {
                         if (_rng.NextDouble() < 0.45)
@@ -475,11 +514,46 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                             });
                         }
                     }
+                    if (_cfg.STapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                    {
+                        if (_rng.NextDouble() < 0.45)
+                        {
+                            ThreadPool.QueueUserWorkItem(_ =>
+                            {
+                                Win32.keybd_event(0x53, 0, 0, 0);
+                                Thread.Sleep(_rng.Next(10, 30));
+                                Win32.keybd_event(0x53, 0, Win32.KEYEVENTF_KEYUP, 0);
+                            });
+                        }
+                    }
+                    if (_cfg.ShiftTapEnabled)
+                    {
+                        if (_rng.NextDouble() < 0.45)
+                        {
+                            ThreadPool.QueueUserWorkItem(_ =>
+                            {
+                                Win32.keybd_event(0x10, 0, 0, 0);
+                                Thread.Sleep(_rng.Next(10, 30));
+                                Win32.keybd_event(0x10, 0, Win32.KEYEVENTF_KEYUP, 0);
+                            });
+                        }
+                    }
+                    if (_cfg.MicroStrafing && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Only if pressing W
+                    {
+                        if (_rng.NextDouble() < 0.35)
+                        {
+                            ThreadPool.QueueUserWorkItem(_ =>
+                            {
+                                byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44; // A or D
+                                Win32.keybd_event(strafeKey, 0, 0, 0);
+                                Thread.Sleep(_rng.Next(15, 40));
+                                Win32.keybd_event(strafeKey, 0, Win32.KEYEVENTF_KEYUP, 0);
+                            });
+                        }
+                    }
 
-                    // Hold time: PostMessage encola directo en la ventana, 1-2ms basta.
-                    // SpinWait(1) en vez de busy-loop puro para reducir contención de CPU
-                    // cuando el aim assist está corriendo en paralelo.
-                    int holdTime = _rng.Next(1, 3);
+                    // Hold time uses the precise downMs calculated by the Pacer
+                    int holdTime = Math.Max(1, (int)downMs);
                     if (pingMs > 0)
                         holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
@@ -500,15 +574,38 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                         if (_cfg.DoubleClickChance > 0 && _rng.NextDouble() * 100.0 < _cfg.DoubleClickChance)
                         {
                             Thread.Sleep(_rng.Next(2, 6)); // 2-5ms gap
-                            IntPtr dcLParam = Win32.PostLeftDown(foregroundWnd);
-                            Thread.Sleep(_rng.Next(1, 3));
-                            Win32.PostLeftUpFresh(foregroundWnd, dcLParam);
-                            PlayClickSound();
-                        }
+                            if (_isCheatbreaker)
+                            {
+                                Win32.SendLeftDown();
+                                Thread.Sleep(_rng.Next(1, 3));
+                                Win32.SendLeftUp();
+                            }
+                            else
+                            {
+                                IntPtr dcLParam = Win32.PostLeftDown(foregroundWnd);
+                                Thread.Sleep(_rng.Next(1, 3));
+                                Win32.PostLeftUpFresh(foregroundWnd, dcLParam);
+                            }
+                                }
 
-                        // ── Hit Detection: schedule async check ──
-                        _hitCheckHwnd = foregroundWnd;
-                        _hitCheckPending = true;
+                        // Auto-Blockhit Logic for Aim-Assist Mode
+                        if (_cfg.AutoBlockHit && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                        {
+                            if (_rng.NextDouble() < 0.60)
+                            {
+                                ThreadPool.QueueUserWorkItem(_ =>
+                                {
+                                    Thread.Sleep(_rng.Next(5, 20));
+                                    if (_isCheatbreaker) Win32.SendRightDown();
+                                    else Win32.PostRightDown(foregroundWnd);
+                                    
+                                    Thread.Sleep(_rng.Next(15, 35));
+                                    
+                                    if (_isCheatbreaker) Win32.SendRightUp();
+                                    else Win32.PostRightUpFresh(foregroundWnd, IntPtr.Zero);
+                                });
+                            }
+                        }
                     }
                 }
 
@@ -548,11 +645,6 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                     StatAvgCps = (StatAvgCps * (StatSamples - 1) + StatLiveCps) / StatSamples;
                 }
                 _lastClickFinishTick = nowTicks;
-
-                // Update hit detection stats
-                StatHitRate = _hitDetector.HitRate;
-                StatTotalHits = _hitDetector.TotalHits;
-                StatTotalMisses = _hitDetector.TotalMisses;
             }
 
             if (globalHoldActive) Win32.SendLeftUpNative();
@@ -571,6 +663,17 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 {
                     if (globalHoldActive) { Win32.SendRightUp(); globalHoldActive = false; }
                     Thread.Sleep(15);
+                    nextClickTick = sw.ElapsedTicks; // reset scheduler
+                    continue;
+                }
+
+                // ── Focus check FIRST (before any global input) ──
+                IntPtr foregroundWnd = Win32.GetForegroundWindow();
+                if (!CachedIsMinecraftFocused(foregroundWnd))
+                {
+                    if (globalHoldActive) { Win32.SendRightUp(); globalHoldActive = false; }
+                    Thread.Sleep(10);
+                    nextClickTick = sw.ElapsedTicks; // prevent CPS spike on refocus
                     continue;
                 }
 
@@ -589,19 +692,12 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 }
                 else if (_cfg.RightMode != 0) // Toggle o Always
                 {
+                    // Solo enviamos el DOWN si Minecraft está en foco (chequeado arriba).
                     if (!globalHoldActive)
                     {
                         Win32.SendRightDown();
                         globalHoldActive = true;
                     }
-                }
-
-                IntPtr foregroundWnd = Win32.GetForegroundWindow();
-                if (_cfg.OnlyInGame && !CachedIsMinecraftFocused(foregroundWnd))
-                {
-                    if (globalHoldActive) { Win32.SendRightUp(); globalHoldActive = false; }
-                    Thread.Sleep(10);
-                    continue;
                 }
 
                 bool cursorShown = CachedIsCursorVisible();
@@ -768,7 +864,7 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                 if (_isCheatbreaker) Win32.SendLeftUp();
                 else Win32.PostLeftUp(foregroundWnd, lParam);
 
-            // W-Tap Logic
+            // WTap / STap / ShiftTap (Velocity Simulation)
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                 {
                     if (_rng.NextDouble() < 0.45)
@@ -777,6 +873,62 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
                         ThreadPool.QueueUserWorkItem(_ => {
                             Thread.Sleep(_rng.Next(10, 30));
                             Win32.keybd_event(0x57, 0, 0, 0);
+                        });
+                    }
+                }
+                if (_cfg.STapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                {
+                    if (_rng.NextDouble() < 0.45)
+                    {
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            Win32.keybd_event(0x53, 0, 0, 0);
+                            Thread.Sleep(_rng.Next(10, 30));
+                            Win32.keybd_event(0x53, 0, Win32.KEYEVENTF_KEYUP, 0);
+                        });
+                    }
+                }
+                if (_cfg.ShiftTapEnabled)
+                {
+                    if (_rng.NextDouble() < 0.45)
+                    {
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            Win32.keybd_event(0x10, 0, 0, 0);
+                            Thread.Sleep(_rng.Next(10, 30));
+                            Win32.keybd_event(0x10, 0, Win32.KEYEVENTF_KEYUP, 0);
+                        });
+                    }
+                }
+                if (_cfg.MicroStrafing && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                {
+                    if (_rng.NextDouble() < 0.35)
+                    {
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44; // A or D
+                            Win32.keybd_event(strafeKey, 0, 0, 0);
+                            Thread.Sleep(_rng.Next(15, 40));
+                            Win32.keybd_event(strafeKey, 0, Win32.KEYEVENTF_KEYUP, 0);
+                        });
+                    }
+                }
+                
+                // Auto-Blockhit (After left click up, micro tap right click to block)
+                if (_cfg.AutoBlockHit && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Usually want to block hit when chasing (W down)
+                {
+                    if (_rng.NextDouble() < 0.60) // 60% chance to blockhit per click
+                    {
+                        ThreadPool.QueueUserWorkItem(_ =>
+                        {
+                            Thread.Sleep(_rng.Next(5, 20)); // tiny gap between hit and block
+                            if (_isCheatbreaker) Win32.SendRightDown();
+                            else Win32.PostRightDown(foregroundWnd);
+                            
+                            Thread.Sleep(_rng.Next(15, 35)); // hold block for extremely short time
+                            
+                            if (_isCheatbreaker) Win32.SendRightUp();
+                            else Win32.PostRightUpFresh(foregroundWnd, IntPtr.Zero);
                         });
                     }
                 }
@@ -812,11 +964,23 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
         private bool IsMinecraftFocused(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero) return false;
+            
+            // Safety check: Never click on Desktop or Taskbar
+            _titleBuffer.Clear();
+            Win32.GetClassName(hwnd, _titleBuffer, 256);
+            string className = _titleBuffer.ToString();
+            if (className == "Progman" || className == "WorkerW" || className == "Shell_TrayWnd")
+                return false;
+
             // Reuse pre-allocated StringBuilder to avoid GC pressure
             _titleBuffer.Clear();
             Win32.GetWindowText(hwnd, _titleBuffer, 256);
             string title = _titleBuffer.ToString().ToLower();
-            _isCheatbreaker = title.Contains("cheatbreaker");
+            _isCheatbreaker = true; // Forzar modo "no integrado" (SendInput normal en lugar de PostMessage)
+
+            // Strict block list: Never click on our own app or common system windows
+            if (title.Contains("lospoderosisimos") || title == "program manager" || title == "")
+                return false;
 
             return title.Contains("minecraft") ||
                    title.Contains("lunar")     ||
@@ -960,82 +1124,5 @@ private double _stableCps = double.NaN; // smoothed CPS for ultra‑stable calcu
             return u * s;
         }
 
-        // ── Async sound playback: runs on a dedicated background thread ──
-        // This prevents SoundPlayer.Play() from blocking the click thread
-        // which was a major source of timing jitter and crosshair teleporting
-        private void PlayClickSound()
-        {
-            if (string.IsNullOrEmpty(_cfg.Sound) || _cfg.Sound == "None") return;
-            // Signal the sound thread to play (non-blocking)
-            _soundPending = true;
-        }
-
-        private void SoundLoop()
-        {
-            while (_soundRunning)
-            {
-                if (_soundPending)
-                {
-                    _soundPending = false;
-                    PlayClickSoundInternal();
-                }
-                Thread.Sleep(5);
-            }
-        }
-
-        private void PlayClickSoundInternal()
-        {
-            string soundDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "XVA", "resource");
-            string soundPath = Path.Combine(soundDir, _cfg.Sound);
-
-            if (!File.Exists(soundPath))
-            {
-                string brandingDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "lospoderosos", "resource");
-                soundPath = Path.Combine(brandingDir, _cfg.Sound);
-            }
-
-            if (!File.Exists(soundPath)) return;
-
-            try
-            {
-                if (_soundPlayer == null || _cachedSoundPath != soundPath)
-                {
-                    _soundPlayer = new SoundPlayer(soundPath);
-                    _soundPlayer.Load();
-                    _cachedSoundPath = soundPath;
-                }
-                _soundPlayer.Play();
-            }
-            catch
-            {
-                // Fail silently
-            }
-        }
-
-        // ── Async Hit Detection: checks for hurt particles after each click ──
-        // Runs on a dedicated thread to avoid blocking the click loop.
-        // Waits ~60ms after a click for Minecraft to render hurt particles,
-        // then samples pixels to detect if the hit connected.
-        private void HitCheckLoop()
-        {
-            while (_hitCheckRunning)
-            {
-                if (_hitCheckPending)
-                {
-                    _hitCheckPending = false;
-                    IntPtr hwnd = _hitCheckHwnd;
-
-                    if (hwnd != IntPtr.Zero && _cfg.HitDetectionEnabled)
-                    {
-                        // Wait for hurt particles to render (~60ms)
-                        // Minecraft processes hits on server tick (50ms) and renders
-                        // particles on the next client frame. 60ms covers both.
-                        Thread.Sleep(60);
-                        _hitDetector.CheckHit(hwnd);
-                    }
-                }
-                Thread.Sleep(5);
-            }
-        }
     }
 }

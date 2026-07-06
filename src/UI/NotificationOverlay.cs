@@ -89,8 +89,29 @@ namespace lospoderosos_lite.UI
             _timer.Tick += OnTick;
         }
 
+        private static bool IsMinecraftFocused(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+            System.Text.StringBuilder titleBuffer = new System.Text.StringBuilder(256);
+            lospoderosos_lite.Utils.Win32.GetWindowText(hwnd, titleBuffer, 256);
+            string title = titleBuffer.ToString().ToLower();
+            return title.Contains("minecraft") ||
+                   title.Contains("lunar")     ||
+                   title.Contains("badlion")   ||
+                   title.Contains("labymod")   ||
+                   title.Contains("feather")   ||
+                   title.Contains("pvplounge") ||
+                   title.Contains("az launcher") ||
+                   title.Contains("salwyrr")   ||
+                   title.Contains("joacodemon") ||
+                   title.Contains("cheatbreaker");
+        }
+
         public static void Show(string title, string message, NotificationType type = NotificationType.Info, int position = 0)
         {
+            IntPtr fgndWnd = GetForegroundWindow();
+            if (!IsMinecraftFocused(fgndWnd)) return;
+
             if (Application.OpenForms.Count > 0 && Application.OpenForms[0].InvokeRequired)
             {
                 Application.OpenForms[0].BeginInvoke(new Action(() => Show(title, message, type, position)));

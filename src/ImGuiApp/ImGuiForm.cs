@@ -529,8 +529,6 @@ public class ImGuiForm : Form
             if (ImGui.Checkbox("RMB-Lock", ref rmb)) _cfg.RmbLock = rmb;
             bool wim = !_cfg.WorkInMenus;
             if (ImGui.Checkbox("Smart Clicker (Pause in Menus)", ref wim)) _cfg.WorkInMenus = !wim;
-            bool smart = _cfg.SmartMiningEnabled;
-            if (ImGui.Checkbox("Smart Mining Mode", ref smart)) _cfg.SmartMiningEnabled = smart;
             bool refill = _cfg.RefillMode;
             if (ImGui.Checkbox("Smart Refill (Shift+Click)", ref refill)) _cfg.RefillMode = refill;
             
@@ -539,6 +537,17 @@ public class ImGuiForm : Form
             if (ImGui.SliderFloat("Double Click %", ref doubleClick, 0.0f, 20.0f, "%.1f %%"))
                 _cfg.DoubleClickChance = doubleClick;
             if (ImGui.IsItemDeactivatedAfterEdit()) _cfg.Save();
+            
+            bool wtap = _cfg.WTapEnabled;
+            if (ImGui.Checkbox("WTap (Knockback Reducer)", ref wtap)) _cfg.WTapEnabled = wtap;
+            bool stap = _cfg.STapEnabled;
+            if (ImGui.Checkbox("STap (Velocity Simulation)", ref stap)) _cfg.STapEnabled = stap;
+            bool shiftTap = _cfg.ShiftTapEnabled;
+            if (ImGui.Checkbox("ShiftTap (Reduce KB)", ref shiftTap)) _cfg.ShiftTapEnabled = shiftTap;
+            bool autoBlock = _cfg.AutoBlockHit;
+            if (ImGui.Checkbox("Auto-BlockHit (1.7/1.8 KB Reducer)", ref autoBlock)) _cfg.AutoBlockHit = autoBlock;
+            bool microStrafe = _cfg.MicroStrafing;
+            if (ImGui.Checkbox("Micro-Strafing (A/D Spammer)", ref microStrafe)) _cfg.MicroStrafing = microStrafe;
             
             string bindText = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
             if (_bindMode && _bindingTarget == 0) bindText = "...press key...";

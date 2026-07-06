@@ -58,15 +58,23 @@ namespace lospoderosos_lite.Config
         public int NotificationPosition = 0; // 0=Bottom Left, 1=Bottom Right, 2=Top Left, 3=Top Right
         public bool ParticleEnabled = false;
         public bool RefillMode = false;
-        public bool SmartMiningEnabled = false;
+        public bool FocusCheckEnabled = true;
         public double DoubleClickChance = 0.0;
         public bool ChromaRGB = false;
+        public bool BurstEnabled = false;
+        public double BurstIntervalMin = 3.0;
+        public double BurstIntervalMax = 6.0;
+        public int BurstDurationMs = 250;
 
         public bool FlushDns = false;
         public bool HideTaskbar = false;
         public bool StreamerMode = false;
         public int DestructBind = 0;
         public bool WTapEnabled = false;
+        public bool STapEnabled = false;
+        public bool ShiftTapEnabled = false;
+        public bool AutoBlockHit = false;
+        public bool MicroStrafing = false;
         public double PingMs = 0.0; // Latency compensation (0-200ms)
         public bool HitDetectionEnabled = false; // Pixel-based hit detection
         public bool AdaptiveCpsEnabled = false;   // Reduce CPS when missing
@@ -86,14 +94,44 @@ namespace lospoderosos_lite.Config
             Presets.Add(new PresetConfig { Name = "minemen.club",   Server = "minemen.club",   Cps = 20.0, RandMode = 2, IsBuiltIn = true });
         }
 
-        public void Save()
+        public void Save(string profileName = "default")
         {
             try
             {
-                string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs");
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
                 Directory.CreateDirectory(dir);
-                File.WriteAllText(Path.Combine(dir, "default.json"), this.ToJson());
+                File.WriteAllText(Path.Combine(dir, profileName + ".json"), this.ToJson());
             } catch { }
+        }
+
+        public static AppConfig Load(string profileName = "default")
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
+                string path = Path.Combine(dir, profileName + ".json");
+                if (File.Exists(path))
+                {
+                    string json = File.ReadAllText(path);
+                    return FromJson(json);
+                }
+            } catch { }
+            return new AppConfig(); // Default config
+        }
+
+        public static string[] GetAvailableProfiles()
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var files = Directory.GetFiles(dir, "*.json");
+                var names = new List<string>();
+                foreach (var f in files) names.Add(Path.GetFileNameWithoutExtension(f));
+                if (!names.Contains("default")) names.Insert(0, "default");
+                return names.ToArray();
+            }
+            catch { return new string[] { "default" }; }
         }
 
         public string ToJson()
@@ -123,10 +161,13 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
             sb.AppendLine(string.Format("  \"ParticleEnabled\": {0},", ParticleEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"RefillMode\": {0},", RefillMode ? "true" : "false"));
-            sb.AppendLine(string.Format("  \"SmartMiningEnabled\": {0},", SmartMiningEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DoubleClickChance\": {0},", DoubleClickChance.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"NotificationPosition\": {0},", NotificationPosition));
             sb.AppendLine(string.Format("  \"ChromaRGB\": {0},", ChromaRGB ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"BurstEnabled\": {0},", BurstEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"BurstIntervalMin\": {0},", BurstIntervalMin.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"BurstIntervalMax\": {0},", BurstIntervalMax.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"BurstDurationMs\": {0},", BurstDurationMs));
 
 
             sb.AppendLine(string.Format("  \"FlushDns\": {0},", FlushDns ? "true" : "false"));
@@ -134,6 +175,10 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"StreamerMode\": {0},", StreamerMode ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DestructBind\": {0},", DestructBind));
             sb.AppendLine(string.Format("  \"WTapEnabled\": {0},", WTapEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"STapEnabled\": {0},", STapEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"ShiftTapEnabled\": {0},", ShiftTapEnabled ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"AutoBlockHit\": {0},", AutoBlockHit ? "true" : "false"));
+            sb.AppendLine(string.Format("  \"MicroStrafing\": {0},", MicroStrafing ? "true" : "false"));
             sb.AppendLine(string.Format("  \"PingMs\": {0},", PingMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"HitDetectionEnabled\": {0},", HitDetectionEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"AdaptiveCpsEnabled\": {0},", AdaptiveCpsEnabled ? "true" : "false"));
@@ -203,10 +248,13 @@ namespace lospoderosos_lite.Config
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);
             cfg.ParticleEnabled = GetBool(json, "ParticleEnabled", cfg.ParticleEnabled);
             cfg.RefillMode = GetBool(json, "RefillMode", cfg.RefillMode);
-            cfg.SmartMiningEnabled = GetBool(json, "SmartMiningEnabled", cfg.SmartMiningEnabled);
             cfg.DoubleClickChance = GetDouble(json, "DoubleClickChance", cfg.DoubleClickChance);
             cfg.NotificationPosition = GetInt(json, "NotificationPosition", cfg.NotificationPosition);
             cfg.ChromaRGB = GetBool(json, "ChromaRGB", cfg.ChromaRGB);
+            cfg.BurstEnabled = GetBool(json, "BurstEnabled", cfg.BurstEnabled);
+            cfg.BurstIntervalMin = GetDouble(json, "BurstIntervalMin", cfg.BurstIntervalMin);
+            cfg.BurstIntervalMax = GetDouble(json, "BurstIntervalMax", cfg.BurstIntervalMax);
+            cfg.BurstDurationMs = GetInt(json, "BurstDurationMs", cfg.BurstDurationMs);
 
 
             cfg.FlushDns = GetBool(json, "FlushDns", cfg.FlushDns);
@@ -214,6 +262,10 @@ namespace lospoderosos_lite.Config
             cfg.StreamerMode = GetBool(json, "StreamerMode", cfg.StreamerMode);
             cfg.DestructBind = GetInt(json, "DestructBind", cfg.DestructBind);
             cfg.WTapEnabled = GetBool(json, "WTapEnabled", cfg.WTapEnabled);
+            cfg.STapEnabled = GetBool(json, "STapEnabled", cfg.STapEnabled);
+            cfg.ShiftTapEnabled = GetBool(json, "ShiftTapEnabled", cfg.ShiftTapEnabled);
+            cfg.AutoBlockHit = GetBool(json, "AutoBlockHit", cfg.AutoBlockHit);
+            cfg.MicroStrafing = GetBool(json, "MicroStrafing", cfg.MicroStrafing);
             cfg.PingMs = Math.Max(0, Math.Min(200, GetDouble(json, "PingMs", cfg.PingMs)));
             cfg.HitDetectionEnabled = GetBool(json, "HitDetectionEnabled", cfg.HitDetectionEnabled);
             cfg.AdaptiveCpsEnabled = GetBool(json, "AdaptiveCpsEnabled", cfg.AdaptiveCpsEnabled);

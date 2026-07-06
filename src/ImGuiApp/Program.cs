@@ -28,20 +28,7 @@ internal static class Program
             // Setup Dependency Injection Container
             var container = new DependencyContainer();
 
-            // Initialize Configuration
-            var cfg = new AppConfig();
-
-            // Load default configuration if it exists
-            string defaultCfgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "configs", "default.json");
-            if (File.Exists(defaultCfgPath))
-            {
-                try
-                {
-                    string json = File.ReadAllText(defaultCfgPath);
-                    cfg = AppConfig.FromJson(json);
-                }
-                catch { }
-            }
+            var cfg = AppConfig.Load("default");
 
             container.RegisterSingleton<AppConfig>(cfg);
 
@@ -86,13 +73,13 @@ internal static class Program
             Console.WriteLine(@"                  |_|                                                                          ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           3.0.6\n\n");
+            Console.WriteLine("                                           3.1.0\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("3.0.6");
+            Updater.CheckForUpdates("3.1.0");
             Console.WriteLine("");
             
             int totalBlocks = 30;

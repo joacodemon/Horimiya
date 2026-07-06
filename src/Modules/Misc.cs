@@ -74,6 +74,88 @@ namespace lospoderosos_lite.Modules
             catch { }
         }
 
+        [System.Runtime.InteropServices.DllImport("psapi.dll")]
+        private static extern bool EmptyWorkingSet(IntPtr hProcess);
+
+        public string BoostFPS()
+        {
+            int boosted = 0;
+            int lowered = 0;
+            long freedMB = 0;
+
+            try
+            {
+                // 1. Set Minecraft/Java processes to High priority
+                var allProcs = Process.GetProcesses();
+                string[] mcNames = { "javaw", "java", "minecraft", "Minecraft" };
+                string[] ignoreLow = { "System", "Idle", "svchost", "csrss", "smss", "lsass", "services", "wininit", "winlogon", "dwm", "explorer" };
+
+                foreach (var proc in allProcs)
+                {
+                    try
+                    {
+                        string name = proc.ProcessName.ToLower();
+                        
+                        // Boost Java/Minecraft
+                        bool isMc = false;
+                        foreach (var mc in mcNames)
+                        {
+                            if (name.Contains(mc.ToLower())) { isMc = true; break; }
+                        }
+                        
+                        if (isMc)
+                        {
+                            proc.PriorityClass = ProcessPriorityClass.High;
+                            boosted++;
+                            continue;
+                        }
+
+                        // Lower non-essential processes
+                        bool isSystem = false;
+                        foreach (var ig in ignoreLow)
+                        {
+                            if (name.Equals(ig.ToLower())) { isSystem = true; break; }
+                        }
+
+                        if (!isSystem && proc.Id != Process.GetCurrentProcess().Id && proc.SessionId > 0)
+                        {
+                            if (proc.PriorityClass == ProcessPriorityClass.Normal || proc.PriorityClass == ProcessPriorityClass.AboveNormal)
+                            {
+                                proc.PriorityClass = ProcessPriorityClass.BelowNormal;
+                                lowered++;
+                            }
+                        }
+                    }
+                    catch { } // Skip processes we can't modify
+                }
+
+                // 2. Free RAM from all processes
+                foreach (var proc in allProcs)
+                {
+                    try
+                    {
+                        long before = proc.WorkingSet64;
+                        EmptyWorkingSet(proc.Handle);
+                        long after = proc.WorkingSet64;
+                        freedMB += (before - after);
+                    }
+                    catch { }
+                }
+
+                // 3. Boost ourselves
+                Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
+
+                // 4. GC collect our own process
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+            }
+            catch { }
+
+            freedMB = Math.Max(0, freedMB / (1024 * 1024));
+            return string.Format("Boosted {0} MC processes, lowered {1} others, freed ~{2} MB RAM", boosted, lowered, freedMB);
+        }
+
         public void Stop()
         {
             StopRpc();
