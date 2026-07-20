@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     [Injectable(true)]
     public class HitDetector

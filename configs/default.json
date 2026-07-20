@@ -1,4 +1,4 @@
-{
+﻿{
   "AverageCps": 16.7 ,
   "Mode": 0,
   "BBMode": 1,
@@ -16,7 +16,7 @@
   "RightBind": 0,
   "RightRandMode": 0,
   "CloudPresetsUrl": "",
-  "Mqtt": {"Host": "test.mosquitto.org", "Port": 1883, "Username": "", "Password": "", "PublishTopic": "lospoderosos/commands", "SubscribeTopic": "lospoderosos/status", "UseTls": false, "QoS": 0},
+  "Mqtt": {"Host": "test.mosquitto.org", "Port": 1883, "Username": "", "Password": "", "PublishTopic": "Horimiya/commands", "SubscribeTopic": "Horimiya/status", "UseTls": false, "QoS": 0},
   "ColorAccent": -57770,
   "ParticleEnabled": true,
   "RefillMode": false,

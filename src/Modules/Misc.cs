@@ -5,10 +5,10 @@ using System.IO.Pipes;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     [Injectable(true)]
     public class Misc
@@ -63,7 +63,7 @@ namespace lospoderosos_lite.Modules
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "cmd.exe",
-                    Arguments = "/c color a & echo Optimizando sistema para Los Poderosisimos... & powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c & ipconfig /flushdns & netsh int tcp set global autotuninglevel=normal & netsh int tcp set global congestionprovider=ctcp & echo. & echo ================================= & echo Optimizacion P+ Completada al 100%%! & echo ================================= & pause",
+                    Arguments = "/c color a & echo Optimizando sistema para Horimiya... & powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c & ipconfig /flushdns & netsh int tcp set global autotuninglevel=normal & netsh int tcp set global congestionprovider=ctcp & echo. & echo ================================= & echo Optimizacion P+ Completada al 100%%! & echo ================================= & pause",
                     CreateNoWindow = false,
                     WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal,
                     UseShellExecute = true,
@@ -184,12 +184,9 @@ namespace lospoderosos_lite.Modules
             bool rightClickKeyWasDown = false;
             bool hideKeyWasDown = false;
             bool destructKeyWasDown = false;
-            bool switchKeyWasDown = false;
-
-            // Built-in profiles for the switcher
-            string[] profileNames    = { "Aggressive", "Legit" };
-            double[] profileCps      = { 20.0, 12.0 };
-            int[]    profileRandMode = { 2, 0 }; // NoDelay, Jitter
+            // Auto-Switch state
+            string lastAppliedServer = "";
+            int autoSwitchCounter = 0;
 
             while (_hotkeyRun)
             {
@@ -269,30 +266,57 @@ namespace lospoderosos_lite.Modules
                     destructKeyWasDown = false;
                 }
 
-                // Check Profile Switch Bind
-                int switchBind = _cfg.ProfileSwitchBind;
-                if (_cfg.AutoSwitchProfiles && switchBind > 0)
+                // ── Automatic IP-Based Auto-Switch ──
+                // Check every ~1 second (15ms * 66 ticks)
+                autoSwitchCounter++;
+                if (autoSwitchCounter >= 66)
                 {
-                    bool isDown = (Win32.GetAsyncKeyState(switchBind) & 0x8000) != 0;
-                    if (isDown && !switchKeyWasDown)
+                    autoSwitchCounter = 0;
+                    
+                    IntPtr hwnd = Win32.GetForegroundWindow();
+                    if (hwnd != IntPtr.Zero)
                     {
-                        _cfg.CurrentProfileIndex = (_cfg.CurrentProfileIndex + 1) % profileNames.Length;
-                        int idx = _cfg.CurrentProfileIndex;
-                        _cfg.AverageCps  = profileCps[idx];
-                        _cfg.RandMode    = profileRandMode[idx];
-                        _cfg.Save();
-                        string notifMsg = "Profile: " + profileNames[idx] + " (" + profileCps[idx].ToString("F0") + " CPS)";
-                        lospoderosos_lite.UI.NotificationOverlay.Show(
-                            "lospoderosisimos", notifMsg,
-                            lospoderosos_lite.UI.NotificationOverlay.NotificationType.Success,
-                            _cfg.NotificationPosition);
-                        if (ProfileSwitchTriggered != null) ProfileSwitchTriggered(notifMsg);
+                        StringBuilder sb = new StringBuilder(256);
+                        Win32.GetWindowText(hwnd, sb, sb.Capacity);
+                        string title = sb.ToString().ToLower();
+
+                        foreach (var preset in _cfg.Presets)
+                        {
+                            if (string.IsNullOrWhiteSpace(preset.Server)) continue;
+                            
+                            // Parse multiple servers separated by " / "
+                            string[] servers = preset.Server.ToLower().Split(new string[] { " / " }, StringSplitOptions.RemoveEmptyEntries);
+                            bool matched = false;
+                            foreach (var server in servers)
+                            {
+                                if (title.Contains(server.Trim()))
+                                {
+                                    matched = true;
+                                    break;
+                                }
+                            }
+
+                            if (matched && lastAppliedServer != preset.Server)
+                            {
+                                lastAppliedServer = preset.Server;
+                                
+                                _cfg.AverageCps = preset.Cps;
+                                _cfg.RandMode = preset.RandMode;
+
+                                _cfg.Save();
+                                
+                                string notifMsg = "Auto-config: " + preset.Name + " (" + preset.Cps.ToString("F1") + " CPS)";
+                                Horimiya.UI.NotificationOverlay.Show(
+                                    "Horimiya", notifMsg,
+                                    Horimiya.UI.NotificationOverlay.NotificationType.Success,
+                                    2); // 2 = Top Left
+                                
+                                if (ProfileSwitchTriggered != null) ProfileSwitchTriggered(notifMsg);
+                                
+                                break;
+                            }
+                        }
                     }
-                    switchKeyWasDown = isDown;
-                }
-                else
-                {
-                    switchKeyWasDown = false;
                 }
 
                 Thread.Sleep(15); // Poll frequency
@@ -370,8 +394,8 @@ namespace lospoderosos_lite.Modules
             string json =
                 "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":" + Process.GetCurrentProcess().Id +
                 ",\"activity\":{" +
-                "\"details\":\"Los poderosisimos v3.0.0\"," +
-                "\"state\":\"no te compares, somos los poderosisimos.\"," +
+                "\"details\":\"Horimiya v3.0.0\"," +
+                "\"state\":\"no te compares, somos Horimiya.\"," +
                 "\"timestamps\":{\"start\":" + uptimeSeconds + "}," +
                 "\"assets\":{" +
                     "\"large_image\":\"logo\"," +

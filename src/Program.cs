@@ -1,13 +1,13 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows.Forms;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Modules;
-using lospoderosos_lite.UI;
+using Horimiya.Config;
+using Horimiya.Modules;
+using Horimiya.UI;
 using System.Drawing;
-using lospoderosos_lite.Utils;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite
+namespace Horimiya
 {
     static class Program
     {

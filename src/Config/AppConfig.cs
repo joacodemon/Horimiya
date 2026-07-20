@@ -4,23 +4,21 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 
-namespace lospoderosos_lite.Config
+namespace Horimiya.Config
 {
     public class PresetConfig
     {
         public string Name      = "";
         public string Server    = "";
         public double Cps = 15.0;
-        public int    RandMode  = 2;    // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Custom
+        public int    RandMode  = 2;    // 0=Jitter, 1=Butterfly, 2=NoDelay
         public bool   IsBuiltIn = false;
-        public double[] CustomCpsWeights = null; // Only used when RandMode == 3
 
         public string RandModeName()
         {
             if (RandMode == 0) return "jitter";
             if (RandMode == 1) return "butterfly";
-            if (RandMode == 2) return "nodelay";
-            return "custom";
+            return "nodelay";
         }
     }
 
@@ -30,7 +28,9 @@ namespace lospoderosos_lite.Config
         public static AppConfig Instance { get; private set; }
 
         // Configuration fields
-        public double AverageCps = 15.0;
+        public double MinCps = 10.0;
+        public double MaxCps = 15.0;
+        public double AverageCps = 15.0; // Kept for backwards compatibility with older config format
         public int Mode = 0; // 0=Hold, 1=Toggle, 2=Always
         public int BBMode = 1; // 0=Off, 1=Full, 2=Sneak
         public bool OnlyInGame = true;
@@ -45,7 +45,10 @@ namespace lospoderosos_lite.Config
         public int HideBind = 0;
         public int RandMode = 0; // 0=Jitter, 1=Butterfly, 2=NoDelay, 3=Manual
         public bool ForceExactCps = false; // When true, clicker uses exact AverageCps without jitter
+        public bool RandomizationEnabled = true; // When false, Min/Max range is hidden and only AverageCps is used
 
+        public double RightMinCps = 10.0;
+        public double RightMaxCps = 15.0;
         public double RightAverageCps = 15.0;
         public int RightMode = 0;
         public int RightBind = 0;
@@ -53,8 +56,12 @@ namespace lospoderosos_lite.Config
         
         public string CloudPresetsUrl = "";
         public MqttSettings Mqtt = new MqttSettings(); // MQTT configuration
-        public double[] CustomCpsWeights = new double[25]; // CPS 1-25 weights
         public int ColorAccent = Color.FromArgb(0, 180, 255).ToArgb();
+        public float AccentR = 0.55f;   // Default: logo purple
+        public string LicenseKey = "";
+        public float AccentG = 0.25f;
+        public float AccentB = 0.85f;
+        public int ClickMethod = 0; // 0=PostMessage (Internal Aim Assist), 1=MouseEvent (External Aim Assist)
         public int NotificationPosition = 0; // 0=Bottom Left, 1=Bottom Right, 2=Top Left, 3=Top Right
         public bool ParticleEnabled = false;
         public bool RefillMode = false;
@@ -79,7 +86,7 @@ namespace lospoderosos_lite.Config
         public bool HitDetectionEnabled = false; // Pixel-based hit detection
         public bool AdaptiveCpsEnabled = false;   // Reduce CPS when missing
         public double AdaptiveCpsMin = 8.0;       // Min CPS when adaptive is on
-        public bool AutoSwitchProfiles = false;
+        public bool AutoSwitchProfiles = true;
         public int ProfileSwitchBind = 0;
         public int CurrentProfileIndex = 0;
         public bool MouseJitterEnabled = false;
@@ -98,7 +105,7 @@ namespace lospoderosos_lite.Config
         {
             try
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Horimiya", "profiles");
                 Directory.CreateDirectory(dir);
                 File.WriteAllText(Path.Combine(dir, profileName + ".json"), this.ToJson());
             } catch { }
@@ -108,7 +115,7 @@ namespace lospoderosos_lite.Config
         {
             try
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Horimiya", "profiles");
                 string path = Path.Combine(dir, profileName + ".json");
                 if (File.Exists(path))
                 {
@@ -123,7 +130,7 @@ namespace lospoderosos_lite.Config
         {
             try
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "lospoderosos", "profiles");
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Horimiya", "profiles");
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
                 var files = Directory.GetFiles(dir, "*.json");
                 var names = new List<string>();
@@ -138,6 +145,8 @@ namespace lospoderosos_lite.Config
         {
             var sb = new StringBuilder();
             sb.AppendLine("{");
+            sb.AppendLine(string.Format("  \"MinCps\": {0} ,", MinCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"MaxCps\": {0} ,", MaxCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"AverageCps\": {0} ,", AverageCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"Mode\": {0},", Mode));
             sb.AppendLine(string.Format("  \"BBMode\": {0},", BBMode));
@@ -146,12 +155,16 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"WorkInMenus\": {0},", WorkInMenus ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DiscordRpc\": {0},", DiscordRpc ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DiscordAppId\": \"{0}\",", DiscordAppId));
+            sb.AppendLine(string.Format("  \"LicenseKey\": \"{0}\",", LicenseKey));
 
             sb.AppendLine(string.Format("  \"Sound\": \"{0}\",", Sound));
             sb.AppendLine(string.Format("  \"ClickBind\": {0},", ClickBind));
             sb.AppendLine(string.Format("  \"HideBind\": {0},", HideBind));
             sb.AppendLine(string.Format("  \"RandMode\": {0},", RandMode));
+            sb.AppendLine(string.Format("  \"RandomizationEnabled\": {0},", RandomizationEnabled ? "true" : "false"));
             
+            sb.AppendLine(string.Format("  \"RightMinCps\": {0} ,", RightMinCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"RightMaxCps\": {0} ,", RightMaxCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"RightAverageCps\": {0} ,", RightAverageCps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"RightMode\": {0},", RightMode));
             sb.AppendLine(string.Format("  \"RightBind\": {0},", RightBind));
@@ -159,6 +172,10 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"CloudPresetsUrl\": \"{0}\",", CloudPresetsUrl));
             sb.AppendLine(string.Format("  \"Mqtt\": {{\"Host\": \"{0}\", \"Port\": {1}, \"Username\": \"{2}\", \"Password\": \"{3}\", \"PublishTopic\": \"{4}\", \"SubscribeTopic\": \"{5}\", \"UseTls\": {6}, \"QoS\": {7}}},", Mqtt.Host, Mqtt.Port, Mqtt.Username, Mqtt.Password, Mqtt.PublishTopic, Mqtt.SubscribeTopic, Mqtt.UseTls ? "true" : "false", Mqtt.QoS));
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
+            sb.AppendLine(string.Format("  \"ClickMethod\": {0},", ClickMethod));
+            sb.AppendLine(string.Format("  \"AccentR\": {0},", AccentR.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"AccentG\": {0},", AccentG.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
+            sb.AppendLine(string.Format("  \"AccentB\": {0},", AccentB.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"ParticleEnabled\": {0},", ParticleEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"RefillMode\": {0},", RefillMode ? "true" : "false"));
             sb.AppendLine(string.Format("  \"DoubleClickChance\": {0},", DoubleClickChance.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
@@ -188,31 +205,12 @@ namespace lospoderosos_lite.Config
             sb.AppendLine(string.Format("  \"MouseJitterEnabled\": {0},", MouseJitterEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"MouseJitterStrength\": {0},", MouseJitterStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
 
-            sb.Append("  \"CustomCpsWeights\": [");
-            for (int i = 0; i < CustomCpsWeights.Length; i++)
-            {
-                sb.Append(CustomCpsWeights[i].ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-                if (i < CustomCpsWeights.Length - 1) sb.Append(", ");
-            }
-            sb.AppendLine("],");
-
             sb.AppendLine("  \"UserPresets\": [");
             bool first = true;
             foreach (var pr in Presets)
             {
                 if (pr.IsBuiltIn) continue;
-                sb.Append(string.Format("    {{\"Name\":\"{0}\",\"Server\":\"{1}\",\"Cps\":{2},\"RandMode\":{3}", pr.Name.Replace("\"", "\\\""), pr.Server.Replace("\"", "\\\""), pr.Cps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), pr.RandMode));
-                if (pr.CustomCpsWeights != null && pr.CustomCpsWeights.Length > 0)
-                {
-                    sb.Append(",\"CustomCpsWeights\":[");
-                    for (int i = 0; i < pr.CustomCpsWeights.Length; i++)
-                    {
-                        sb.Append(pr.CustomCpsWeights[i].ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
-                        if (i < pr.CustomCpsWeights.Length - 1) sb.Append(",");
-                    }
-                    sb.Append("]");
-                }
-                sb.Append("}");
+                sb.Append(string.Format("    {{\"Name\":\"{0}\",\"Server\":\"{1}\",\"Cps\":{2},\"RandMode\":{3}}}", pr.Name.Replace("\"", "\\\""), pr.Server.Replace("\"", "\\\""), pr.Cps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), pr.RandMode));
                 first = false;
             }
             sb.AppendLine();
@@ -224,7 +222,21 @@ namespace lospoderosos_lite.Config
         public static AppConfig FromJson(string json)
         {
             var cfg = new AppConfig();
+            cfg.MinCps = GetDouble(json, "MinCps", cfg.MinCps);
+            cfg.MaxCps = GetDouble(json, "MaxCps", cfg.MaxCps);
             cfg.AverageCps = GetDouble(json, "AverageCps", cfg.AverageCps);
+            // Si Min/Max están en default pero AverageCps cambió (config viejo), actualizamos Min/Max:
+            if (cfg.MinCps == 10.0 && cfg.MaxCps == 15.0 && cfg.AverageCps != 15.0) {
+                cfg.MinCps = Math.Max(1.0, cfg.AverageCps - 2.0);
+                cfg.MaxCps = cfg.AverageCps + 2.0;
+            }
+            
+            if (!cfg.RandomizationEnabled) {
+                cfg.MinCps = cfg.AverageCps;
+                cfg.MaxCps = cfg.AverageCps;
+                cfg.RightMinCps = cfg.RightAverageCps;
+                cfg.RightMaxCps = cfg.RightAverageCps;
+            }
             cfg.Mode = GetInt(json, "Mode", cfg.Mode);
             cfg.BBMode = GetInt(json, "BBMode", cfg.BBMode);
             cfg.OnlyInGame = GetBool(json, "OnlyInGame", cfg.OnlyInGame);
@@ -232,13 +244,21 @@ namespace lospoderosos_lite.Config
             cfg.WorkInMenus = GetBool(json, "WorkInMenus", cfg.WorkInMenus);
             cfg.DiscordRpc = GetBool(json, "DiscordRpc", cfg.DiscordRpc);
             cfg.DiscordAppId = GetString(json, "DiscordAppId", cfg.DiscordAppId);
+            cfg.LicenseKey = GetString(json, "LicenseKey", cfg.LicenseKey);
 
             cfg.Sound = GetString(json, "Sound", cfg.Sound);
             cfg.ClickBind = GetInt(json, "ClickBind", cfg.ClickBind);
             cfg.HideBind = GetInt(json, "HideBind", cfg.HideBind);
             cfg.RandMode = GetInt(json, "RandMode", cfg.RandMode);
+            cfg.RandomizationEnabled = GetBool(json, "RandomizationEnabled", cfg.RandomizationEnabled);
             
+            cfg.RightMinCps = GetDouble(json, "RightMinCps", cfg.RightMinCps);
+            cfg.RightMaxCps = GetDouble(json, "RightMaxCps", cfg.RightMaxCps);
             cfg.RightAverageCps = GetDouble(json, "RightAverageCps", cfg.RightAverageCps);
+            if (cfg.RightMinCps == 10.0 && cfg.RightMaxCps == 15.0 && cfg.RightAverageCps != 15.0) {
+                cfg.RightMinCps = Math.Max(1.0, cfg.RightAverageCps - 2.0);
+                cfg.RightMaxCps = cfg.RightAverageCps + 2.0;
+            }
             cfg.RightMode = GetInt(json, "RightMode", cfg.RightMode);
             cfg.RightBind = GetInt(json, "RightBind", cfg.RightBind);
             cfg.RightRandMode = GetInt(json, "RightRandMode", cfg.RightRandMode);
@@ -246,6 +266,10 @@ namespace lospoderosos_lite.Config
             cfg.Mqtt = GetMqttSettings(json);
 
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);
+            cfg.ClickMethod = GetInt(json, "ClickMethod", cfg.ClickMethod);
+            cfg.AccentR = GetFloat(json, "AccentR", cfg.AccentR);
+            cfg.AccentG = GetFloat(json, "AccentG", cfg.AccentG);
+            cfg.AccentB = GetFloat(json, "AccentB", cfg.AccentB);
             cfg.ParticleEnabled = GetBool(json, "ParticleEnabled", cfg.ParticleEnabled);
             cfg.RefillMode = GetBool(json, "RefillMode", cfg.RefillMode);
             cfg.DoubleClickChance = GetDouble(json, "DoubleClickChance", cfg.DoubleClickChance);
@@ -275,13 +299,6 @@ namespace lospoderosos_lite.Config
             cfg.MouseJitterEnabled = GetBool(json, "MouseJitterEnabled", cfg.MouseJitterEnabled);
             cfg.MouseJitterStrength = Math.Max(1.0, Math.Min(10.0, GetDouble(json, "MouseJitterStrength", cfg.MouseJitterStrength)));
 
-            double[] loadedWeights = GetDoubleArray(json, "CustomCpsWeights");
-            if (loadedWeights != null && loadedWeights.Length == 25)
-                cfg.CustomCpsWeights = loadedWeights;
-            else if (loadedWeights != null)
-                for (int i = 0; i < Math.Min(25, loadedWeights.Length); i++)
-                    cfg.CustomCpsWeights[i] = loadedWeights[i];
-
             ParseUserPresets(json, cfg.Presets);
             return cfg;
         }
@@ -296,6 +313,18 @@ namespace lospoderosos_lite.Config
             double val;
             string raw = json.Substring(start, end - start).Trim();
             return double.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val) ? val : def;
+        }
+
+        private static float GetFloat(string json, string key, float def)
+        {
+            string s = "\"" + key + "\":";
+            int idx = json.IndexOf(s);
+            if (idx < 0) return def;
+            int start = idx + s.Length;
+            int end = FindValueEnd(json, start);
+            float val;
+            string raw = json.Substring(start, end - start).Trim();
+            return float.TryParse(raw, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val) ? val : def;
         }
 
         private static int GetInt(string json, string key, int def)
@@ -332,20 +361,6 @@ namespace lospoderosos_lite.Config
             return json.Substring(start, end - start);
         }
 
-        private static double[] GetDoubleArray(string json, string key)
-        {
-            string s = "\"" + key + "\":[";
-            int idx = json.IndexOf(s);
-            if (idx < 0) return null;
-            int start = idx + s.Length;
-            int end = json.IndexOf(']', start);
-            if (end < 0) return null;
-            var parts = json.Substring(start, end - start).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            var arr = new double[parts.Length];
-            for (int i = 0; i < parts.Length; i++)
-                double.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arr[i]);
-            return arr;
-        }
 
         private static int FindValueEnd(string json, int start)
         {
@@ -363,8 +378,8 @@ namespace lospoderosos_lite.Config
             settings.Port = GetInt(json, "Mqtt.Port", 1883);
             settings.Username = GetString(json, "Mqtt.Username", "");
             settings.Password = GetString(json, "Mqtt.Password", "");
-            settings.PublishTopic = GetString(json, "Mqtt.PublishTopic", "lospoderosos/commands");
-            settings.SubscribeTopic = GetString(json, "Mqtt.SubscribeTopic", "lospoderosos/status");
+            settings.PublishTopic = GetString(json, "Mqtt.PublishTopic", "Horimiya/commands");
+            settings.SubscribeTopic = GetString(json, "Mqtt.SubscribeTopic", "Horimiya/status");
             settings.UseTls = GetBool(json, "Mqtt.UseTls", false);
             settings.QoS = GetInt(json, "Mqtt.QoS", 0);
             return settings;
@@ -394,9 +409,8 @@ namespace lospoderosos_lite.Config
                 double cps = GetDoubleFromObj(obj, "Cps", 13.0);
                 // UI initialization moved to a dedicated method. Existing stray code removed.
                 int rand = GetIntFromObj(obj, "RandMode", 2);
-                double[] customWeights = GetDoubleArrayFromObj(obj, "CustomCpsWeights");
                 if (!string.IsNullOrEmpty(name))
-                    list.Add(new PresetConfig { Name = name, Server = server, Cps = cps, RandMode = rand, IsBuiltIn = false, CustomCpsWeights = customWeights });
+                    list.Add(new PresetConfig { Name = name, Server = server, Cps = cps, RandMode = rand, IsBuiltIn = false });
                 pos = cb + 1;
             }
         }
@@ -440,19 +454,6 @@ namespace lospoderosos_lite.Config
             return int.TryParse(raw, out val) ? val : def;
         }
 
-        private static double[] GetDoubleArrayFromObj(string obj, string key)
-        {
-            string s = "\"" + key + "\":[";
-            int idx = obj.IndexOf(s);
-            if (idx < 0) return null;
-            int start = idx + s.Length;
-            int end = obj.IndexOf(']', start);
-            if (end < 0) return null;
-            var parts = obj.Substring(start, end - start).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-            var arr = new double[parts.Length];
-            for (int i = 0; i < parts.Length; i++)
-                double.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out arr[i]);
-            return arr;
-        }
     }
 }
+

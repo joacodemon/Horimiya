@@ -1,10 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
-namespace lospoderosos_lite.Utils
+namespace Horimiya.Utils
 {
     // ─── Custom Checkbox ──────────────────────────────────────────────────────
     public class FlatCheck : Panel

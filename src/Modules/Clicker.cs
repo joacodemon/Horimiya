@@ -7,8 +7,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Utils;
 
 // Performance optimization notes:
 // - Cached focus/cursor checks to avoid per-tick P/Invoke overhead
@@ -17,7 +17,7 @@ using lospoderosos_lite.Utils;
 // - Reduced GDI pixel sampling frequency
 // - Pre-allocated INPUT structs to minimize GC pressure
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     [Injectable(true)]
     public class Clicker
@@ -36,10 +36,6 @@ namespace lospoderosos_lite.Modules
         private const double REFILL_CPS_MIN = 25.0;
         private const double REFILL_CPS_MAX = 38.0;
 
-        // Custom mode state: streak-based smoothing
-        private double _customTargetCps = 15.0; // CPS picked from the weighted distribution
-        private double _customCurrentCps = 15.0; // smoothed value drifting toward target
-        private int    _customStreakLeft  = 0;    // clicks remaining at current target before re-rolling
         private double _stableCps = double.NaN; // smoothed CPS for ultra-stable calculation
 
         // ── Pacer State ──
@@ -62,10 +58,10 @@ namespace lospoderosos_lite.Modules
         private double NextSmoothedJitter() {
             if (m_jitterStep >= m_jitterSteps) {
                 m_jitterTarget = NextUniform(-1.0, 1.0);
-                m_jitterSteps = (int)NextUniform(8.0, 16.0);
+                m_jitterSteps = (int)NextUniform(14.0, 26.0); // más pasos = transición más larga y suave
                 m_jitterStep = 0;
             }
-            m_jitterValue += (m_jitterTarget - m_jitterValue) * 0.18;
+            m_jitterValue += (m_jitterTarget - m_jitterValue) * 0.10; // más lento = más smooth
             m_jitterStep++;
             return m_jitterValue;
         }
@@ -122,12 +118,23 @@ namespace lospoderosos_lite.Modules
             _cfg = cfg;
         }
 
-        // Returns the CPS to aim for this tick. If ForceExactCps is enabled, returns the exact configured AverageCps.
+        // Call this when switching profiles so EMA/jitter state doesn't bleed across presets.
+        public void ResetTimingState()
+        {
+            m_counter       = 0;
+            m_jitterValue   = 0.0;
+            m_jitterTarget  = 0.0;
+            m_jitterStep    = 0;
+            m_intervalEma   = 0.0;
+            m_downEma       = 0.0;
+            m_lastIntervalMs= 0.0;
+            m_lastDownMs    = 0.0;
+            _stableCps      = double.NaN;
+        }
+
+        // Obsolete, left for compatibility if needed.
         private double GetCurrentCps()
         {
-            if (_cfg.ForceExactCps)
-                return _cfg.AverageCps;
-            // Otherwise, the jitter/random logic will handle variation. For now we just return the configured average.
             return _cfg.AverageCps;
         }
 
@@ -257,12 +264,9 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // ── RMB-Lock ──
-                if (_cfg.RmbLock && Win32.IsRightDown)
-                {
-                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                    Thread.Sleep(5);
-                    continue;
-                }
+                // Keep the main left-click loop alive during blockhit-like situations.
+                // The old logic paused the whole clicker whenever RMB was held, which broke attacks.
+                bool blockHitSuppressed = _cfg.RmbLock && Win32.IsRightDown;
 
                 // ── Menu / Inventory restriction ──
                 bool cursorShown = CachedIsCursorVisible();
@@ -277,10 +281,11 @@ namespace lospoderosos_lite.Modules
                 }
 
                 // Refill check - Smart Refill Mode
-                bool isRefilling = cursorShown && ((Win32.GetAsyncKeyState(0x10) & 0x8000) != 0);
+                bool inventoryLikeScreen = cursorShown && CachedIsInventoryLikeScreen(foregroundWnd);
+                bool isRefilling = false;
                 
                 // Smart Refill: auto shift+click when cursor is in bottom half of inventory
-                if (_cfg.RefillMode && cursorShown && !isRefilling && CachedIsMinecraftFocused(foregroundWnd))
+                if (_cfg.RefillMode && inventoryLikeScreen && CachedIsMinecraftFocused(foregroundWnd))
                 {
                     Win32.RECT rect;
                     if (Win32.GetClientRect(foregroundWnd, out rect))
@@ -341,11 +346,17 @@ namespace lospoderosos_lite.Modules
                 }
                 else
                 {
-                    double cpsMin = targetCps - 0.5;
-                    double cpsMax = targetCps + 0.5;
-                    if (cpsMin < 5.0) cpsMin = 5.0;
-                    if (cpsMax < cpsMin + 0.2) cpsMax = cpsMin + 0.2;
+                    double cpsMin = _cfg.MinCps;
+                    double cpsMax = _cfg.MaxCps;
+                    if (cpsMin < 1.0) cpsMin = 1.0;
+                    if (cpsMax < cpsMin) cpsMax = cpsMin;
                     if (cpsMax > 30.0) cpsMax = 30.0;
+                    
+                    if (_cfg.BurstEnabled && inBurst)
+                    {
+                        cpsMin = Math.Min(30.0, cpsMin + 6.0);
+                        cpsMax = Math.Min(30.0, cpsMax + 6.0);
+                    }
 
                     double cps = NextTriangular(cpsMin, cpsMax);
                     double interval = 1000.0 / cps;
@@ -363,28 +374,31 @@ namespace lospoderosos_lite.Modules
                     if (_cfg.RandMode == 0) // Jitter / Smooth
                     {
                         baseRatio = 0.46;
-                        jitterAmplitude = 0.24;
-                        maxIntervalDelta = 0.22;
-                        intervalSmoothing = 0.16;
-                        downSmoothing = 0.22;
+                        jitterAmplitude = 0.18;       // menos amplitud → menos saltos bruscos
+                        maxIntervalDelta = 0.16;      // cambios de intervalo más graduales
+                        intervalSmoothing = 0.12;     // EMA más lenta = transiciones suaves
+                        downSmoothing = 0.16;
                     }
                     else if (_cfg.RandMode == 2) // NoDelay / Competitive
                     {
                         baseRatio = 0.40;
-                        jitterAmplitude = 0.16;
-                        maxIntervalDelta = 0.18;
-                        intervalSmoothing = 0.10;
-                        downSmoothing = 0.16;
+                        jitterAmplitude = 0.13;
+                        maxIntervalDelta = 0.14;
+                        intervalSmoothing = 0.09;
+                        downSmoothing = 0.13;
                     }
                     else if (_cfg.RandMode == 1) // Butterfly
                     {
                         isButterfly = true;
+                        // Butterfly manda 2 clicks por ciclo, así que doblamos el intervalo
+                        // para que la CPS efectiva sea la que configuró el usuario (no el doble).
+                        interval *= 2.0;
                     }
 
                     baseRatio += pingT * 0.03;
                     jitterAmplitude *= (1.0 - 0.55 * pingT);
 
-                    double drift = Math.Sin(m_counter * 0.028) * 0.08;
+                    double drift = Math.Sin(m_counter * 0.018) * 0.055; // drift más lento y sutil
                     interval += drift;
 
                     if (m_intervalEma <= 0.0) m_intervalEma = interval;
@@ -397,7 +411,7 @@ namespace lospoderosos_lite.Modules
                     double jitter = NextSmoothedJitter() * jitterAmplitude;
                     down += jitter;
 
-                    double minDown = Math.Max(5.5, interval * 0.34);
+                    double minDown = Math.Max(6.5, interval * 0.38); // hold mínimo más largo = más fluido
                     double maxDown = interval - 0.6;
                     if (maxDown < minDown) maxDown = minDown + 0.2;
                     down = Math.Max(minDown, Math.Min(maxDown, down));
@@ -405,7 +419,7 @@ namespace lospoderosos_lite.Modules
                     if (m_downEma <= 0.0) m_downEma = down;
                     else m_downEma = m_downEma * (1.0 - downSmoothing) + down * downSmoothing;
 
-                    down = ClampChange(m_downEma, m_lastDownMs, 0.30);
+                    down = ClampChange(m_downEma, m_lastDownMs, 0.20); // clamping más suave
 
                     double gap = interval - down;
                     if (gap < 0.4) {
@@ -589,7 +603,7 @@ namespace lospoderosos_lite.Modules
                                 }
 
                         // Auto-Blockhit Logic for Aim-Assist Mode
-                        if (_cfg.AutoBlockHit && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
+                        if (_cfg.AutoBlockHit && !blockHitSuppressed && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                         {
                             if (_rng.NextDouble() < 0.60)
                             {
@@ -729,21 +743,27 @@ namespace lospoderosos_lite.Modules
                 }
                 else if (_cfg.RightRandMode == 1) // Butterfly
                 {
-                    double drop = _rng.NextDouble() * 1.5;
-                    double butterflyCps = Math.Max(5.0, targetCps - drop);
+                    double cpsMin = _cfg.RightMinCps;
+                    double cpsMax = _cfg.RightMaxCps;
+                    if (cpsMin < 1.0) cpsMin = 1.0;
+                    if (cpsMax < cpsMin) cpsMax = cpsMin;
+                    if (cpsMax > 30.0) cpsMax = 30.0;
+                    
+                    double butterflyCps = NextTriangular(cpsMin, cpsMax);
                     delayMs = 2000.0 / butterflyCps;
                     delayMs += (NextGaussian() * 1.5);
                     isButterfly = true;
                 }
                 else // Jitter
                 {
-                    // Ultra-stable Jitter implementation using EMA
-                    double jitter = NextGaussian() * 0.05;
-                    double rawCps = targetCps + jitter;
-                    double lower = targetCps * 0.97;
-                    double upper = targetCps * 1.03;
-                    rawCps = Math.Max(lower, Math.Min(upper, rawCps));
-                    rawCps = Math.Max(1.0, Math.Max(targetCps - 1.0, rawCps));
+                    // Jitter implementation
+                    double cpsMin = _cfg.RightMinCps;
+                    double cpsMax = _cfg.RightMaxCps;
+                    if (cpsMin < 1.0) cpsMin = 1.0;
+                    if (cpsMax < cpsMin) cpsMax = cpsMin;
+                    if (cpsMax > 30.0) cpsMax = 30.0;
+                    
+                    double rawCps = NextTriangular(cpsMin, cpsMax);
                     
                     // Temporary local EMA since we don't have _stableCps for right click right now
                     // We can just use the stabilized rawCps directly.
@@ -845,6 +865,7 @@ namespace lospoderosos_lite.Modules
             }
 
             IntPtr lParam = IntPtr.Zero;
+            bool blockHitSuppressed = _cfg.RmbLock && Win32.IsRightDown;
             if (_isCheatbreaker) { Win32.SendLeftDown(); lParam = (IntPtr)1; }
             else { lParam = Win32.PostLeftDown(foregroundWnd); }
 
@@ -915,7 +936,7 @@ namespace lospoderosos_lite.Modules
                 }
                 
                 // Auto-Blockhit (After left click up, micro tap right click to block)
-                if (_cfg.AutoBlockHit && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Usually want to block hit when chasing (W down)
+                if (_cfg.AutoBlockHit && !blockHitSuppressed && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Usually want to block hit when chasing (W down)
                 {
                     if (_rng.NextDouble() < 0.60) // 60% chance to blockhit per click
                     {
@@ -944,10 +965,16 @@ namespace lospoderosos_lite.Modules
         }
 
 
-        private bool _isCheatbreaker = false;
+        // The user explicitly requested to force this directly in the clicker, so it always uses mouse_event
+        // This ensures the aim assists (both internal and external) work flawlessly.
+        private bool _isCheatbreaker => true;
 
         private bool CachedIsMinecraftFocused(IntPtr hwnd)
         {
+            // Verificación instantánea y no en caché: si el mouse sale de la ventana, detenerse.
+            System.Drawing.Point p;
+            if (!Win32.IsCursorInClientArea(hwnd, out p)) return false;
+
             // If same window and cache is fresh, return cached result
             if (hwnd == _lastFocusHwnd && _focusCheckTimer.IsRunning 
                 && _focusCheckTimer.ElapsedMilliseconds < FOCUS_CHECK_INTERVAL_MS)
@@ -976,10 +1003,9 @@ namespace lospoderosos_lite.Modules
             _titleBuffer.Clear();
             Win32.GetWindowText(hwnd, _titleBuffer, 256);
             string title = _titleBuffer.ToString().ToLower();
-            _isCheatbreaker = true; // Forzar modo "no integrado" (SendInput normal en lugar de PostMessage)
 
             // Strict block list: Never click on our own app or common system windows
-            if (title.Contains("lospoderosisimos") || title == "program manager" || title == "")
+            if (title.Contains("Horimiya") || title == "program manager" || title == "")
                 return false;
 
             return title.Contains("minecraft") ||

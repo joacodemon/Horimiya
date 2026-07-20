@@ -7,10 +7,10 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     public class RightClicker
     {
@@ -133,31 +133,7 @@ namespace lospoderosos_lite.Modules
 
                 double delayMs;
 
-                if (_cfg.RightRandMode == 3) // Manual Custom
-                {
-                    double sumWeights = 0;
-                    for (int i = 0; i < 25; i++) sumWeights += _cfg.CustomCpsWeights[i];
-
-                    double chosenCps = targetCps;
-                    if (sumWeights > 0)
-                    {
-                        double roll = _rng.NextDouble() * sumWeights;
-                        double accumulator = 0;
-                        for (int i = 0; i < 25; i++)
-                        {
-                            accumulator += _cfg.CustomCpsWeights[i];
-                            if (roll <= accumulator)
-                            {
-                                chosenCps = i + 1;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    delayMs = 1000.0 / Math.Max(1.0, chosenCps);
-                    delayMs += (_rng.NextDouble() * 3.0 - 1.5); 
-                }
-                else if (_cfg.RightRandMode == 2) // NoDelay
+                if (_cfg.RightRandMode == 2) // NoDelay
                 {
                     double actualCps = targetCps;
                     double roll = _rng.NextDouble();
@@ -320,21 +296,26 @@ namespace lospoderosos_lite.Modules
 
         private bool IsMinecraftFocused()
         {
+            IntPtr currentHwnd = Win32.GetForegroundWindow();
+            System.Drawing.Point dummy;
+            if (!Win32.IsCursorInClientArea(currentHwnd, out dummy)) return false;
+
             if (!_focusCheckTimer.IsRunning || _focusCheckTimer.ElapsedMilliseconds > FOCUS_CHECK_INTERVAL_MS)
             {
-                IntPtr hwnd = Win32.GetForegroundWindow();
-                if (hwnd != _lastFocusHwnd)
+                if (currentHwnd != _lastFocusHwnd)
                 {
-                    _lastFocusHwnd = hwnd;
-                    Win32.GetWindowText(hwnd, _titleBuffer, _titleBuffer.Capacity);
+                    _lastFocusHwnd = currentHwnd;
+                    Win32.GetWindowText(currentHwnd, _titleBuffer, _titleBuffer.Capacity);
                     string title = _titleBuffer.ToString().ToLower();
-                    _lastFocusResult = title.Contains("minecraft") || 
+                    
+                    bool isMc = title.Contains("minecraft") || 
                                        title.Contains("lunar") || 
                                        title.Contains("badlion") || 
                                        title.Contains("labymod") ||
                                        title.Contains("salwyrr") ||
                                        title.Contains("cheatbreaker") ||
                                        title.Contains("feather");
+                    _lastFocusResult = isMc;
                 }
                 _focusCheckTimer.Restart();
             }

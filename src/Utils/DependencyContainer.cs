@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace lospoderosos_lite.Utils
+namespace Horimiya.Utils
 {
     public class DependencyContainer
     {

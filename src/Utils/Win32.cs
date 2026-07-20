@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Drawing;
@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace lospoderosos_lite.Utils
+namespace Horimiya.Utils
 {
     public static class Win32
     {
@@ -22,6 +22,21 @@ namespace lospoderosos_lite.Utils
 
         public const byte VK_LSHIFT = 0xA0;
         public const uint KEYEVENTF_KEYUP = 0x0002;
+        public const uint KEYEVENTF_SCANCODE = 0x0008;
+
+        [DllImport("user32.dll")]
+        public static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+        public static void SendHardwareKey(byte vk, bool down)
+        {
+            uint scanCode = MapVirtualKey(vk, 0);
+            uint flags = KEYEVENTF_SCANCODE;
+            if (!down) flags |= KEYEVENTF_KEYUP;
+            keybd_event(0, (byte)scanCode, flags, 0);
+        }
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
 
         [DllImport("user32.dll")]
         public static extern bool GetCursorInfo(ref CURSORINFO pci);

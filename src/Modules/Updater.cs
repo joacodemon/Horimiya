@@ -6,13 +6,13 @@ using System.Net.Http;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     public static class Updater
     {
         // IMPORTANTE: Este archivo debe existir en tu GitHub.
-        // Ejemplo de contenido de version.txt: 2.3.0|https://tu-sitio.com/lospoderosos.exe
-        public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/lospoderosos/main/version.txt";
+        // Ejemplo de contenido de version.txt: 2.3.0|https://tu-sitio.com/Horimiya.exe
+        public static string VersionUrl = "https://raw.githubusercontent.com/joacodemon/Horimiya/main/version.txt";
 
         // HttpClient reutilizable (thread-safe, no usar using)
         private static readonly HttpClient _httpClient;

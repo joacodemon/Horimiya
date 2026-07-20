@@ -1,10 +1,10 @@
-See the end of this message for details on invoking 
+﻿See the end of this message for details on invoking 
 just-in-time (JIT) debugging instead of this dialog box.
 
 ************** Exception Text **************
 System.InvalidOperationException: Form that is already visible cannot be displayed as a modal dialog box. Set the form's visible property to false before calling Show.
    at System.Windows.Forms.Form.Show(IWin32Window owner)
-   at lospoderosos_lite.UI.MainForm.<.ctor>b__7(Object s, EventArgs e)
+   at Horimiya_lite.UI.MainForm.<.ctor>b__7(Object s, EventArgs e)
    at System.Windows.Forms.Form.OnShown(EventArgs e)
    at System.Windows.Forms.Control.InvokeMarshaledCallbackHelper(Object obj)
    at System.Threading.ExecutionContext.RunInternal(ExecutionContext executionContext, ContextCallback callback, Object state, Boolean preserveSyncCtx)
@@ -23,7 +23,7 @@ mscorlib
 los-poderosos
     Assembly Version: 0.0.0.0
     Win32 Version: 0.0.0.0
-    CodeBase: file:///C:/Users/diegou/Desktop/lospoderosos/los-poderosos.exe
+    CodeBase: file:///C:/Users/diegou/Desktop/Horimiya/los-poderosos.exe
 ----------------------------------------
 System.Windows.Forms
     Assembly Version: 4.0.0.0

@@ -33,21 +33,69 @@ public class ImGuiController : IDisposable
     private readonly HashSet<int> _keysDown = new HashSet<int>();
     private bool _ctrlDown, _shiftDown, _altDown;
 
+    private GCHandle _pinnedFont;
+
     public ImGuiController(int width, int height)
     {
         _windowWidth = width;
         _windowHeight = height;
         ImGui.CreateContext();
         var io = ImGui.GetIO();
-        if (System.IO.File.Exists(@"C:\Windows\Fonts\segoeui.ttf"))
+
+        byte[]? fontData = null;
+        try
         {
-            // Load Segoe UI for a much cleaner look
-            io.Fonts.AddFontFromFileTTF(@"C:\Windows\Fonts\segoeui.ttf", 16.0f);
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            using (var stream = assembly.GetManifestResourceStream("ImGuiApp.Resources.Montserrat-Medium.ttf"))
+            {
+                if (stream != null)
+                {
+                    fontData = new byte[stream.Length];
+                    stream.Read(fontData, 0, fontData.Length);
+                }
+            }
+        }
+        catch { }
+
+        if (fontData != null)
+        {
+            try
+            {
+                _pinnedFont = GCHandle.Alloc(fontData, GCHandleType.Pinned);
+                IntPtr fontPtr = _pinnedFont.AddrOfPinnedObject();
+                unsafe
+                {
+                    var config = ImGuiNative.ImFontConfig_ImFontConfig();
+                    config->FontDataOwnedByAtlas = 0; // false
+                    io.Fonts.AddFontFromMemoryTTF(fontPtr, fontData.Length, 16.0f, (IntPtr)config);
+                    ImGuiNative.ImFontConfig_destroy(config);
+
+                    // Merge Segoe UI symbols for ⚔ and ⚙ icons
+                    if (System.IO.File.Exists(@"C:\Windows\Fonts\segoeui.ttf"))
+                    {
+                        var mergeConfig = ImGuiNative.ImFontConfig_ImFontConfig();
+                        mergeConfig->MergeMode = 1; // true
+                        mergeConfig->PixelSnapH = 1;
+                        
+                        ushort[] ranges = new ushort[] { 0x2600, 0x26FF, 0 };
+                        GCHandle pinnedRanges = GCHandle.Alloc(ranges, GCHandleType.Pinned);
+                        io.Fonts.AddFontFromFileTTF(@"C:\Windows\Fonts\segoeui.ttf", 16.0f, (IntPtr)mergeConfig, pinnedRanges.AddrOfPinnedObject());
+                        pinnedRanges.Free();
+                        
+                        ImGuiNative.ImFontConfig_destroy(mergeConfig);
+                    }
+                }
+            }
+            catch
+            {
+                io.Fonts.AddFontDefault();
+            }
         }
         else
         {
             io.Fonts.AddFontDefault();
         }
+
         io.DisplaySize = new System.Numerics.Vector2(width, height);
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
 
@@ -344,5 +392,10 @@ void main()
         GL.DeleteProgram(_shaderProgram);
         GL.DeleteShader(_vertexShader);
         GL.DeleteShader(_fragmentShader);
+
+        if (_pinnedFont.IsAllocated)
+        {
+            _pinnedFont.Free();
+        }
     }
 }

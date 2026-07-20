@@ -1,0 +1,10 @@
+System.ObjectDisposedException: No se puede obtener acceso al objeto desechado.
+Nombre del objeto: 'GLControl'.
+   en OpenTK.GLControl.ValidateState() en C:\projects\opentk\src\OpenTK.GLControl\GLControl.cs:línea 156
+   en OpenTK.GLControl.SwapBuffers() en C:\projects\opentk\src\OpenTK.GLControl\GLControl.cs:línea 348
+   en ImGuiForm.RenderLoop(Object sender, EventArgs e) en C:\Users\juaqu\Downloads\PODEROSOS\src\ImGuiApp\ImGuiForm.cs:línea 221
+   en System.Windows.Forms.Application.ThreadContext.System.Windows.Forms.UnsafeNativeMethods.IMsoComponent.FDoIdle(Int32 grfidlef)
+   en System.Windows.Forms.Application.ComponentManager.System.Windows.Forms.UnsafeNativeMethods.IMsoComponentManager.FPushMessageLoop(IntPtr dwComponentID, Int32 reason, Int32 pvLoopData)
+   en System.Windows.Forms.Application.ThreadContext.RunMessageLoopInner(Int32 reason, ApplicationContext context)
+   en System.Windows.Forms.Application.ThreadContext.RunMessageLoop(Int32 reason, ApplicationContext context)
+   en Program.Main() en C:\Users\juaqu\Downloads\PODEROSOS\src\ImGuiApp\Program.cs:línea 117

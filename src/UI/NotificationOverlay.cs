@@ -5,9 +5,9 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
-using lospoderosos_lite.Config;
+using Horimiya.Config;
 
-namespace lospoderosos_lite.UI
+namespace Horimiya.UI
 {
     public class NotificationOverlay : Form
     {
@@ -25,9 +25,10 @@ namespace lospoderosos_lite.UI
         private string _message;
         private NotificationType _type;
         private int _positionIndex;
+        private IntPtr _targetWindow = IntPtr.Zero;
         private System.Windows.Forms.Timer _timer;
         private double _targetOpacity = 0.0;
-        private int _lifeTimeMs = 3000;
+        private int _lifeTimeMs = 4000;
         private int _elapsedMs = 0;
         private int _fadeTimerInterval = 16;
         private int _targetY;
@@ -46,6 +47,15 @@ namespace lospoderosos_lite.UI
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool ClientToScreen(IntPtr hWnd, ref Point lpPoint);
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
@@ -53,6 +63,15 @@ namespace lospoderosos_lite.UI
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         private const int GWL_HWNDPARENT = -8;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
 
         protected override bool ShowWithoutActivation => true;
 
@@ -83,7 +102,7 @@ namespace lospoderosos_lite.UI
             Opacity = 0.0;
             DoubleBuffered = true;
 
-            Size = new Size(240, 50);
+            Size = new Size(280, 58);
 
             _timer = new System.Windows.Forms.Timer { Interval = _fadeTimerInterval };
             _timer.Tick += OnTick;
@@ -93,7 +112,7 @@ namespace lospoderosos_lite.UI
         {
             if (hwnd == IntPtr.Zero) return false;
             System.Text.StringBuilder titleBuffer = new System.Text.StringBuilder(256);
-            lospoderosos_lite.Utils.Win32.GetWindowText(hwnd, titleBuffer, 256);
+            Horimiya.Utils.Win32.GetWindowText(hwnd, titleBuffer, 256);
             string title = titleBuffer.ToString().ToLower();
             return title.Contains("minecraft") ||
                    title.Contains("lunar")     ||
@@ -109,9 +128,7 @@ namespace lospoderosos_lite.UI
 
         public static void Show(string title, string message, NotificationType type = NotificationType.Info, int position = 0)
         {
-            IntPtr fgndWnd = GetForegroundWindow();
-            if (!IsMinecraftFocused(fgndWnd)) return;
-
+            // Always show — no focus check needed. We appear over everything including fullscreen.
             if (Application.OpenForms.Count > 0 && Application.OpenForms[0].InvokeRequired)
             {
                 Application.OpenForms[0].BeginInvoke(new Action(() => Show(title, message, type, position)));
@@ -119,10 +136,14 @@ namespace lospoderosos_lite.UI
             }
 
             var overlay = new NotificationOverlay(title, message, type, position);
+            overlay._targetWindow = FindTargetWindow();
             _activeNotifications.Add(overlay);
             overlay.Show();
-            
-            // No longer attaching to foreground window to prevent minimizing exclusive fullscreen apps.
+
+            // Force topmost immediately so it layers above a fullscreen Minecraft window
+            if (overlay.IsHandleCreated)
+                SetWindowPos(overlay.Handle, HWND_TOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
             overlay._targetOpacity = 0.95;
             RecalculatePositions();
@@ -131,57 +152,98 @@ namespace lospoderosos_lite.UI
 
         private static void RecalculatePositions()
         {
-            var screen = Screen.PrimaryScreen.WorkingArea;
-            int paddingX = 20;
-            int paddingY = 20;
-            int spacing = 10;
+            int paddingX = 16;
+            int paddingY = 16;
+            int spacing = 8;
 
             _activeNotifications.RemoveAll(n => n.IsDisposed || n._targetOpacity == 0.0 && n.Opacity <= 0.05);
 
             for (int i = 0; i < _activeNotifications.Count; i++)
             {
                 var n = _activeNotifications[i];
+                Rectangle bounds = GetTargetBounds(n._targetWindow);
+
                 int x = paddingX;
                 int y = paddingY;
 
                 switch (n._positionIndex)
                 {
                     case 0: // Bottom Left
-                        x = paddingX;
-                        y = screen.Height - paddingY - n.Height - (i * (n.Height + spacing));
+                        x = bounds.Left + paddingX;
+                        y = bounds.Bottom - paddingY - n.Height - (i * (n.Height + spacing));
                         break;
                     case 1: // Bottom Right
-                        x = screen.Width - paddingX - n.Width;
-                        y = screen.Height - paddingY - n.Height - (i * (n.Height + spacing));
+                        x = bounds.Right - paddingX - n.Width;
+                        y = bounds.Bottom - paddingY - n.Height - (i * (n.Height + spacing));
                         break;
                     case 2: // Top Left
-                        x = paddingX;
-                        y = paddingY + (i * (n.Height + spacing));
+                        x = bounds.Left + paddingX;
+                        y = bounds.Top + paddingY + (i * (n.Height + spacing));
                         break;
                     case 3: // Top Right
-                        x = screen.Width - paddingX - n.Width;
-                        y = paddingY + (i * (n.Height + spacing));
+                        x = bounds.Right - paddingX - n.Width;
+                        y = bounds.Top + paddingY + (i * (n.Height + spacing));
                         break;
                 }
 
                 if (n._isInitialPosition)
                 {
-                    // Slide up slightly
-                    n.Location = new Point(x, y + 20);
+                    n.Location = new Point(x, y + 12);
                     n._targetY = y;
                     n._isInitialPosition = false;
                 }
                 else
                 {
-                    n.Location = new Point(x, n.Location.Y); // Always enforce the correct X position
+                    n.Location = new Point(x, n.Location.Y);
                     n._targetY = y;
                 }
             }
         }
 
+        private static Rectangle GetTargetBounds(IntPtr hwnd)
+        {
+            if (hwnd != IntPtr.Zero)
+            {
+                RECT windowRect;
+                if (GetWindowRect(hwnd, out windowRect))
+                {
+                    int width = windowRect.Right - windowRect.Left;
+                    int height = windowRect.Bottom - windowRect.Top;
+                    return new Rectangle(windowRect.Left, windowRect.Top, width, height);
+                }
+            }
+
+            return Screen.PrimaryScreen.Bounds;
+        }
+
+        private static IntPtr FindTargetWindow()
+        {
+            IntPtr hwnd = GetForegroundWindow();
+            if (IsMinecraftLikeWindow(hwnd)) return hwnd;
+            return IntPtr.Zero;
+        }
+
+        private static bool IsMinecraftLikeWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+
+            var title = new System.Text.StringBuilder(256);
+            Horimiya.Utils.Win32.GetWindowText(hwnd, title, 256);
+            string titleLower = title.ToString().ToLowerInvariant();
+            if (titleLower.Contains("minecraft") || titleLower.Contains("lunar") || titleLower.Contains("cheatbreaker") ||
+                titleLower.Contains("labymod") || titleLower.Contains("badlion") || titleLower.Contains("feather") ||
+                titleLower.Contains("pvplounge") || titleLower.Contains("salwyrr")) return true;
+
+            var cls = new System.Text.StringBuilder(256);
+            Horimiya.Utils.Win32.GetClassName(hwnd, cls, 256);
+            string classLower = cls.ToString().ToLowerInvariant();
+            return classLower.Contains("lwjgl") || classLower.Contains("java") || classLower.Contains("minecraft");
+        }
+
         private void OnTick(object sender, EventArgs e)
         {
             ForceTopMost();
+            RecalculatePositions();
 
             _elapsedMs += _fadeTimerInterval;
 
@@ -235,48 +297,59 @@ namespace lospoderosos_lite.UI
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            var g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-            // Background
-            int radius = 4;
-            using (GraphicsPath path = RoundedRectangle(new Rectangle(0, 0, Width - 1, Height - 1), radius))
+            int radius = 8;
+            var bgRect = new Rectangle(0, 0, Width - 1, Height - 1);
+
+            using (var bgPath = RoundedRectangle(bgRect, radius))
             {
-                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(20, 20, 20))) 
-                {
-                    e.Graphics.FillPath(bgBrush, path);
-                }
-                using (Pen borderPen = new Pen(Color.FromArgb(40, 40, 40), 1f))
-                {
-                    e.Graphics.DrawPath(borderPen, path);
-                }
+                using (var bgBrush = new SolidBrush(Color.FromArgb(240, 5, 6, 12)))
+                    g.FillPath(bgBrush, bgPath);
+                using (var borderPen = new Pen(Color.FromArgb(140, 122, 51, 216), 1.1f))
+                    g.DrawPath(borderPen, bgPath);
             }
 
-            // Texts
-            using (Font titleFont = new Font("Segoe UI", 8.5f, FontStyle.Bold))
-            using (SolidBrush titleBrush = new SolidBrush(Color.White))
+            using (var accentPath = RoundedRectangle(new Rectangle(0, 5, 3, Height - 10), 2))
+            using (var accentBrush = new SolidBrush(Color.FromArgb(255, 122, 51, 216)))
+                g.FillPath(accentBrush, accentPath);
+
+            string titleUpper = _title.ToUpper();
+            using (var titleFont = new Font("Segoe UI", 8.5f, FontStyle.Bold))
+            using (var titleBrush = new SolidBrush(Color.FromArgb(255, 122, 51, 216)))
             {
-                e.Graphics.DrawString(_title, titleFont, titleBrush, new PointF(12, 6));
+                g.DrawString(titleUpper, titleFont, titleBrush, new PointF(10f, 7f));
             }
 
-            using (Font msgFont = new Font("Segoe UI", 9.5f, FontStyle.Regular))
-            using (SolidBrush msgBrush = new SolidBrush(Color.FromArgb(200, 200, 200)))
+            using (var msgFont = new Font("Segoe UI", 8.8f, FontStyle.Regular))
+            using (var msgBrush = new SolidBrush(Color.FromArgb(220, 220, 220)))
             {
-                e.Graphics.DrawString(_message, msgFont, msgBrush, new PointF(12, 22));
+                string msg = _message;
+                if (msg.Length > 42) msg = msg.Substring(0, 39) + "...";
+                g.DrawString(msg, msgFont, msgBrush, new PointF(10f, 24f));
             }
 
-            // Progress bar
-            int barHeight = 2;
-            int barY = Height - barHeight;
             float progress = 1f - (float)_elapsedMs / _lifeTimeMs;
-            if (progress < 0) progress = 0;
-            if (progress > 1) progress = 1;
+            if (progress < 0f) progress = 0f;
+            if (progress > 1f) progress = 1f;
 
-            int barWidth = (int)((Width - 24) * progress); 
+            int barH = 2;
+            int barY = Height - barH - 1;
+            int barX = 10;
+            int barMaxW = Width - 20;
+            int barW = (int)(barMaxW * progress);
 
-            using (SolidBrush barBrush = new SolidBrush(Color.FromArgb(139, 92, 246))) // Purple
+            if (barW > 0)
             {
-                e.Graphics.FillRectangle(barBrush, 12, barY - 4, barWidth, barHeight);
+                using (var barBrush = new LinearGradientBrush(
+                    new Point(barX, barY), new Point(barX + barMaxW, barY),
+                    Color.FromArgb(255, 123, 52, 216),
+                    Color.FromArgb(90, 70, 30, 140)))
+                {
+                    g.FillRectangle(barBrush, barX, barY, barW, barH);
+                }
             }
         }
 

@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 
-namespace lospoderosos_lite.Config
+namespace Horimiya.Config
 {
     public class MqttSettings
     {
@@ -19,8 +19,8 @@ namespace lospoderosos_lite.Config
             Port = 1883;
             Username = "";
             Password = "";
-            PublishTopic = "lospoderosos/commands";
-            SubscribeTopic = "lospoderosos/status";
+            PublishTopic = "Horimiya/commands";
+            SubscribeTopic = "Horimiya/status";
             UseTls = false;
             QoS = 0;
         }

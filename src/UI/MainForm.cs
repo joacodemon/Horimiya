@@ -6,11 +6,11 @@ using System.Reflection;
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
 // OpenTK dependencies removed (not available in this build environment)
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Modules;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Modules;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite.UI
+namespace Horimiya.UI
 {
     [Injectable(false)]
     public class MainForm : Form
@@ -65,6 +65,12 @@ namespace lospoderosos_lite.UI
         FlatTextBox _txAppId;
         ParticleOverlayForm _particleOverlay;
 
+        // Randomization UI references for dynamic show/hide
+        FlatCheck  _chkRandLmb, _chkRandRmb;
+        FlatSlider _sldrMinCps, _sldrMaxCps;
+        FlatSlider _sldrMinCpsRight, _sldrMaxCpsRight;
+        Label      _lblMinCps, _lblMaxCps, _lblMinCpsRight, _lblMaxCpsRight, _lblAvgCpsLmb, _lblAvgCpsRmb;
+
         Color _accentColor = Color.FromArgb(0, 180, 255);
         
         // ── Animation & Chroma State ──
@@ -109,7 +115,7 @@ namespace lospoderosos_lite.UI
         {
             _cfg = cfg; _clicker = clicker; _recorder = recorder; _misc = misc;
 
-            Text = "los poderosisimos";
+            Text = "Horimiya";
             Size = new Size(950, 470);
             FormBorderStyle = FormBorderStyle.None;
             StartPosition   = FormStartPosition.CenterScreen;
@@ -180,6 +186,7 @@ namespace lospoderosos_lite.UI
                             _cfg.RandMode = pr.RandMode;
                             if (_sldrCps != null) { _sldrCps.Value = _cfg.AverageCps; _sldrCps.Invalidate(); }
                             if (_dRand != null) { _dRand.SelectedIndex = _cfg.RandMode; }
+                            UpdateRandomizationUiState();
                         }
                         break;
                     }
@@ -294,6 +301,32 @@ namespace lospoderosos_lite.UI
             Invalidate();
         }
 
+        private void UpdateRandomizationUiState()
+        {
+            bool rand = _cfg.RandomizationEnabled;
+
+            if (_chkRandLmb != null) _chkRandLmb.Checked = rand;
+            if (_chkRandRmb != null) _chkRandRmb.Checked = rand;
+
+            // LMB controls
+            if (_sldrCps != null) _sldrCps.Visible = !rand;
+            if (_lblAvgCpsLmb != null) _lblAvgCpsLmb.Visible = !rand;
+            
+            if (_sldrMinCps != null) _sldrMinCps.Visible = rand;
+            if (_lblMinCps != null) _lblMinCps.Visible = rand;
+            if (_sldrMaxCps != null) _sldrMaxCps.Visible = rand;
+            if (_lblMaxCps != null) _lblMaxCps.Visible = rand;
+
+            // RMB controls
+            if (_sldrCpsRight != null) _sldrCpsRight.Visible = !rand;
+            if (_lblAvgCpsRmb != null) _lblAvgCpsRmb.Visible = !rand;
+
+            if (_sldrMinCpsRight != null) _sldrMinCpsRight.Visible = rand;
+            if (_lblMinCpsRight != null) _lblMinCpsRight.Visible = rand;
+            if (_sldrMaxCpsRight != null) _sldrMaxCpsRight.Visible = rand;
+            if (_lblMaxCpsRight != null) _lblMaxCpsRight.Visible = rand;
+        }
+
         IEnumerable<Control> GetAllControls(Control parent)
         {
 
@@ -365,7 +398,7 @@ namespace lospoderosos_lite.UI
                 using (Pen p = new Pen(Color.FromArgb(150, _accentColor), 1))
                     e.Graphics.DrawLine(p, 0, 25, tb.Width, 25);
             };
-            var tbLbl = Lbl("los poderosisimos", DIM, 95, 7, FNT);
+            var tbLbl = Lbl("Horimiya", DIM, 95, 7, FNT);
             tbLbl.MouseDown += Drag; tb.MouseDown += Drag;
             var bX = SysBtn("x", 924, 0);
             bX.FlatAppearance.MouseOverBackColor = Color.FromArgb(190, 30, 30);
@@ -412,9 +445,15 @@ namespace lospoderosos_lite.UI
                         }
                         // Refresh UI values manually
                         _sldrCps.Value = _cfg.AverageCps;
+                        if (_sldrMinCps != null) { _sldrMinCps.Value = _cfg.MinCps; _sldrMinCps.Invalidate(); }
+                        if (_sldrMaxCps != null) { _sldrMaxCps.Value = _cfg.MaxCps; _sldrMaxCps.Invalidate(); }
+                        if (_sldrCpsRight != null) { _sldrCpsRight.Value = _cfg.RightAverageCps; _sldrCpsRight.Invalidate(); }
+                        if (_sldrMinCpsRight != null) { _sldrMinCpsRight.Value = _cfg.RightMinCps; _sldrMinCpsRight.Invalidate(); }
+                        if (_sldrMaxCpsRight != null) { _sldrMaxCpsRight.Value = _cfg.RightMaxCps; _sldrMaxCpsRight.Invalidate(); }
                         _chkTgl.Checked = _cfg.Mode == 1;
                         if (_dRand != null) _dRand.SelectedIndex = _cfg.RandMode;
                         if (_chkOig != null) _chkOig.Checked = _cfg.OnlyInGame;
+                        UpdateRandomizationUiState();
                     }
                 }
             };
@@ -496,6 +535,7 @@ namespace lospoderosos_lite.UI
                     g.DrawPath(p, path);
             };
             RefreshSide();
+            UpdateRandomizationUiState();
         }
 
         // ── LMB ───────────────────────────────────────────────────────────────
@@ -523,9 +563,64 @@ namespace lospoderosos_lite.UI
             // Row 2: CPS
             _sldrCps = new FlatSlider(_cfg.AverageCps, 1.0, 50.0)
                 { Location = new Point(8, 36), Size = new Size(380, 22) };
-            _sldrCps.ValueChanged += (s,e) => _cfg.AverageCps = _sldrCps.Value;
+            _sldrCps.ValueChanged += (s,e) => {
+                _cfg.AverageCps = _sldrCps.Value;
+                _cfg.MinCps = _sldrCps.Value;
+                _cfg.MaxCps = _sldrCps.Value;
+            };
             _sldrCps.MouseUp += (s,e) => _cfg.Save();
-            lft.Controls.Add(Lbl("Average CPS", DIM, 395, 42, FNT));
+            _lblAvgCpsLmb = Lbl("Average CPS", DIM, 395, 42, FNT);
+
+            // Randomization Checkbox on Row 1
+            _chkRandLmb = new FlatCheck("Randomization", _cfg.RandomizationEnabled) { Location = new Point(320, 10) };
+            _chkRandLmb.Click += (s, e) => {
+                _cfg.RandomizationEnabled = _chkRandLmb.Checked;
+                if (!_chkRandLmb.Checked) {
+                    _cfg.MinCps = _cfg.AverageCps;
+                    _cfg.MaxCps = _cfg.AverageCps;
+                    _sldrCps.Value = _cfg.AverageCps;
+                    _sldrCps.Invalidate();
+                } else {
+                    _sldrMinCps.Value = _cfg.MinCps;
+                    _sldrMinCps.Invalidate();
+                    _sldrMaxCps.Value = _cfg.MaxCps;
+                    _sldrMaxCps.Invalidate();
+                }
+                _cfg.Save();
+                _clicker.ResetTimingState();
+                UpdateRandomizationUiState();
+            };
+
+            // Randomized Sliders
+            _sldrMinCps = new FlatSlider(_cfg.MinCps, 1.0, 50.0)
+                { Location = new Point(8, 36), Size = new Size(175, 22) };
+            _sldrMinCps.ValueChanged += (s, e) => {
+                _cfg.MinCps = _sldrMinCps.Value;
+                _cfg.AverageCps = (_cfg.MinCps + _cfg.MaxCps) * 0.5;
+                if (_cfg.MinCps > _cfg.MaxCps) {
+                    _cfg.MaxCps = _cfg.MinCps;
+                    _sldrMaxCps.Value = _cfg.MaxCps;
+                    _sldrMaxCps.Invalidate();
+                }
+                _clicker.ResetTimingState();
+            };
+            _sldrMinCps.MouseUp += (s, e) => _cfg.Save();
+            _lblMinCps = Lbl("Min CPS", DIM, 188, 42, FNT);
+
+            _sldrMaxCps = new FlatSlider(_cfg.MaxCps, 1.0, 50.0)
+                { Location = new Point(250, 36), Size = new Size(175, 22) };
+            _sldrMaxCps.ValueChanged += (s, e) => {
+                _cfg.MaxCps = _sldrMaxCps.Value;
+                _cfg.AverageCps = (_cfg.MinCps + _cfg.MaxCps) * 0.5;
+                if (_cfg.MaxCps < _cfg.MinCps) {
+                    _cfg.MinCps = _cfg.MaxCps;
+                    _sldrMinCps.Value = _cfg.MinCps;
+                    _sldrMinCps.Invalidate();
+                }
+                _clicker.ResetTimingState();
+            };
+            _sldrMaxCps.MouseUp += (s, e) => _cfg.Save();
+            _lblMaxCps = Lbl("Max CPS", DIM, 430, 42, FNT);
 
             // Checkboxes
             _chkOig  = new FlatCheck("Only In Game",    _cfg.OnlyInGame)  { Location = new Point(8, 66)  };
@@ -581,7 +676,7 @@ namespace lospoderosos_lite.UI
             sldrBurstDur.MouseUp += (s,e) => _cfg.Save();
             lft.Controls.Add(Lbl("Duration (ms)", DIM, 395, 310, FNT));
 
-            lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps,
+            lft.Controls.AddRange(new Control[] { _chkTgl, _btnBind, _dMode, _sldrCps, _lblAvgCpsLmb, _chkRandLmb, _sldrMinCps, _sldrMaxCps, _lblMinCps, _lblMaxCps,
                 _chkOig, _chkRmb, _chkWim, sldrDouble, _sldrPing,
                 chkHitDet, chkAdaptive, sldrAdaptiveMin, lblHitInfo, chkBurst, sldrBurstDur });
 
@@ -592,40 +687,11 @@ namespace lospoderosos_lite.UI
             rgt.Controls.Add(HSep(8, 48, RW - 20));
             rgt.Controls.Add(Lbl("Randomization", TXT, 8, 56, FNTB));
             _dRand = new FlatDrop { Size = new Size(RW - 20, 18) };
-            _dRand.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay", "Manual" });
-            _dRand.SelectedIndex = _cfg.RandMode;
+            _dRand.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay" });
+            _dRand.SelectedIndex = Math.Min(_cfg.RandMode, 2);
             
-            var btnManualEdit = BoxBtn("Edit Custom Randomization", TXT, 8, 300, RW - 20, 22);
-            // Highlight when Manual Randomization is active
-            btnManualEdit.BackColor = (_cfg.RandMode == 3) ? Color.FromArgb(0, 200, 0) : _accentColor;
-            btnManualEdit.Visible = (_cfg.RandMode == 3);
-            btnManualEdit.Click += (s, e) => {
-                using (var crf = new CustomRandForm(_cfg, _accentColor)) {
-                    crf.ShowDialog();
-                }
-            };
-            // Inline custom randomization chart panel (using fields)
-            _customPanel = new Panel { Bounds = new Rectangle(8, 340, RW - 20, 140), BackColor = Color.FromArgb(20, 20, 20) };
-            _customPanel.Paint += DrawCustomChart;
-            _customPanel.MouseDown += CustomChartMouseDown;
-            _customPanel.MouseMove += CustomChartMouseMove;
-            _customPanel.MouseUp += CustomChartMouseUp;
-            _customStats = new Label { ForeColor = TXT, Font = FNT, Location = new Point(8, 490), AutoSize = true };
-            _customPanel.Visible = (_cfg.RandMode == 3);
-            _customStats.Visible = (_cfg.RandMode == 3);
-            UpdateCustomStats();
-            rgt.Controls.Add(btnManualEdit);
-            rgt.Controls.Add(_customPanel);
-            rgt.Controls.Add(_customStats);
-
             _dRand.SelectedIndexChanged += (s,e) => {
                 _cfg.RandMode = _dRand.SelectedIndex;
-                // Update button appearance and visibility
-                btnManualEdit.Visible = (_cfg.RandMode == 3);
-                btnManualEdit.BackColor = (_cfg.RandMode == 3) ? Color.FromArgb(0, 200, 0) : _accentColor;
-                // Update visibility of inline custom UI
-                _customPanel.Visible = (_cfg.RandMode == 3);
-                _customStats.Visible = (_cfg.RandMode == 3);
             };
             rgt.Controls.Add(AccentBorderWrap(_dRand, 7, 158, RW - 18, 20));
 
@@ -713,7 +779,7 @@ namespace lospoderosos_lite.UI
         {
             var p = new Panel { BackColor = BG };
             p.Controls.Add(Lbl("Server Presets", TXT, 10, 10, FNTB));
-            p.Controls.Add(Lbl("recommended configs for los poderosisimos members", DIM, 10, 26, FNT));
+            p.Controls.Add(Lbl("recommended configs for Horimiya members", DIM, 10, 26, FNT));
 
             // Add auto-switch checkbox
             var chkAutoSwitch = new FlatCheck("Auto-Switch Profiles by Server Window", _cfg.AutoSwitchProfiles) { Location = new Point(10, 42) };
@@ -749,7 +815,7 @@ namespace lospoderosos_lite.UI
                 double cps = 13.0;
                 double.TryParse(txCps.Text.Trim().Replace(",","."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out cps);
                 int rm = dRandAdd.SelectedIndex;
-                var pr = new lospoderosos_lite.Config.PresetConfig { Name = nm, Server = nm, Cps = cps, RandMode = rm, IsBuiltIn = false };
+                var pr = new Horimiya.Config.PresetConfig { Name = nm, Server = nm, Cps = cps, RandMode = rm, IsBuiltIn = false };
                 _cfg.Presets.Add(pr);
                 txName.Text = "server name";
                 txCps.Text  = "15.0";
@@ -828,11 +894,7 @@ namespace lospoderosos_lite.UI
                     if (_sldrCps != null) { _sldrCps.Value = _cfg.AverageCps; _sldrCps.Invalidate(); }
                     if (_dRand   != null) { _dRand.SelectedIndex = _cfg.RandMode; }
                     SetTab(0); // Switch to LMB tab so user sees the changes
-                    if (_cfg.RandMode == 3) {
-                        using (var crf = new CustomRandForm(_cfg, _accentColor)) {
-                            crf.ShowDialog();
-                        }
-                    }
+
                 };
                 card.Controls.Add(btnLoad);
 
@@ -947,11 +1009,66 @@ namespace lospoderosos_lite.UI
             // Row 2: CPS
             _sldrCpsRight = new FlatSlider(_cfg.RightAverageCps, 1.0, 50.0)
             { Location = new Point(8, 36), Size = new Size(380, 22) };
-            _sldrCpsRight.ValueChanged += (s, e) => _cfg.RightAverageCps = _sldrCpsRight.Value;
+            _sldrCpsRight.ValueChanged += (s, e) => {
+                _cfg.RightAverageCps = _sldrCpsRight.Value;
+                _cfg.RightMinCps = _sldrCpsRight.Value;
+                _cfg.RightMaxCps = _sldrCpsRight.Value;
+            };
             _sldrCpsRight.MouseUp += (s, e) => _cfg.Save();
-            lft.Controls.Add(Lbl("Average CPS", DIM, 395, 42, FNT));
+            _lblAvgCpsRmb = Lbl("Average CPS", DIM, 395, 42, FNT);
 
-            // Randomization
+            // Randomization Checkbox on Row 1 (RMB)
+            _chkRandRmb = new FlatCheck("Randomization", _cfg.RandomizationEnabled) { Location = new Point(320, 10) };
+            _chkRandRmb.Click += (s, e) => {
+                _cfg.RandomizationEnabled = _chkRandRmb.Checked;
+                if (!_chkRandRmb.Checked) {
+                    _cfg.RightMinCps = _cfg.RightAverageCps;
+                    _cfg.RightMaxCps = _cfg.RightAverageCps;
+                    _sldrCpsRight.Value = _cfg.RightAverageCps;
+                    _sldrCpsRight.Invalidate();
+                } else {
+                    _sldrMinCpsRight.Value = _cfg.RightMinCps;
+                    _sldrMinCpsRight.Invalidate();
+                    _sldrMaxCpsRight.Value = _cfg.RightMaxCps;
+                    _sldrMaxCpsRight.Invalidate();
+                }
+                _cfg.Save();
+                _clicker.ResetTimingState();
+                UpdateRandomizationUiState();
+            };
+
+            // Randomized Sliders (RMB)
+            _sldrMinCpsRight = new FlatSlider(_cfg.RightMinCps, 1.0, 50.0)
+                { Location = new Point(8, 36), Size = new Size(175, 22) };
+            _sldrMinCpsRight.ValueChanged += (s, e) => {
+                _cfg.RightMinCps = _sldrMinCpsRight.Value;
+                _cfg.RightAverageCps = (_cfg.RightMinCps + _cfg.RightMaxCps) * 0.5;
+                if (_cfg.RightMinCps > _cfg.RightMaxCps) {
+                    _cfg.RightMaxCps = _cfg.RightMinCps;
+                    _sldrMaxCpsRight.Value = _cfg.RightMaxCps;
+                    _sldrMaxCpsRight.Invalidate();
+                }
+                _clicker.ResetTimingState();
+            };
+            _sldrMinCpsRight.MouseUp += (s, e) => _cfg.Save();
+            _lblMinCpsRight = Lbl("Min CPS", DIM, 188, 42, FNT);
+
+            _sldrMaxCpsRight = new FlatSlider(_cfg.RightMaxCps, 1.0, 50.0)
+                { Location = new Point(250, 36), Size = new Size(175, 22) };
+            _sldrMaxCpsRight.ValueChanged += (s, e) => {
+                _cfg.RightMaxCps = _sldrMaxCpsRight.Value;
+                _cfg.RightAverageCps = (_cfg.RightMinCps + _cfg.RightMaxCps) * 0.5;
+                if (_cfg.RightMaxCps < _cfg.RightMinCps) {
+                    _cfg.RightMinCps = _cfg.RightMaxCps;
+                    _sldrMinCpsRight.Value = _cfg.RightMinCps;
+                    _sldrMinCpsRight.Invalidate();
+                }
+                _clicker.ResetTimingState();
+            };
+            _sldrMaxCpsRight.MouseUp += (s, e) => _cfg.Save();
+            _lblMaxCpsRight = Lbl("Max CPS", DIM, 430, 42, FNT);
+
+            // Randomization (Pattern selector)
             lft.Controls.Add(Lbl("Randomization", TXT, 8, 70, FNTB));
             _dRandRight = new FlatDrop { Location = new Point(8, 90), Size = new Size(150, 18) };
             _dRandRight.Items.AddRange(new object[] { "Jitter", "Butterfly", "NoDelay" });
@@ -963,7 +1080,7 @@ namespace lospoderosos_lite.UI
             lft.Controls.Add(HSep(8, 130, LW - 20));
             lft.Controls.Add(Lbl("Auto-BlockHit has been removed.", DIM, 8, 140, FNT));
 
-            lft.Controls.AddRange(new Control[] { _chkTglRight, _dModeRight, _sldrCpsRight });
+            lft.Controls.AddRange(new Control[] { _chkTglRight, _dModeRight, _sldrCpsRight, _lblAvgCpsRmb, _chkRandRmb, _sldrMinCpsRight, _sldrMaxCpsRight, _lblMinCpsRight, _lblMaxCpsRight });
 
             // Right Box
             var rgt = Box(RX, 40, RW, BH);
@@ -1021,7 +1138,7 @@ namespace lospoderosos_lite.UI
                                 ")\r\n" +
                                 "del /q /f \"" + exePath + "\"\r\n" +
                                 "if exist \"" + cfgDir + "\" rmdir /s /q \"" + cfgDir + "\"\r\n" +
-                                "del /q /f C:\\Windows\\Prefetch\\*lospoderosisimos*.pf 2>nul\r\n" +
+                                "del /q /f C:\\Windows\\Prefetch\\*Horimiya*.pf 2>nul\r\n" +
                                 "del /q /f \"%~f0\"\r\n";
                 
                 File.WriteAllText(batPath, script);
@@ -1135,12 +1252,12 @@ namespace lospoderosos_lite.UI
             bAbout.Controls.Add(Lbl("licensed to joacodemon", DIM, 10, 40, FNT));
             bAbout.Controls.Add(Lbl("• expiration date: never", DIM, 15, 60, FNT));
 
-            bAbout.Controls.Add(Lbl("about los poderosisimos", DIM, 10, 100, FNT));
+            bAbout.Controls.Add(Lbl("about Horimiya", DIM, 10, 100, FNT));
             bAbout.Controls.Add(Lbl("• build version: 2.2.9", DIM, 15, 120, FNT));
             bAbout.Controls.Add(Lbl("• build type: faction", DIM, 15, 140, FNT));
 
             bAbout.Controls.Add(HSep(10, 200, 270));
-            var lblCC = Lbl("los poderosisimos © 2026", TXT, 0, 220, FNT);
+            var lblCC = Lbl("Horimiya © 2026", TXT, 0, 220, FNT);
             lblCC.Location = new Point((290 - lblCC.Width) / 2, 220);
             bAbout.Controls.Add(lblCC);
             var lblRights = Lbl("all rights reserved", DIM, 0, 240, FNT);
@@ -1204,47 +1321,6 @@ namespace lospoderosos_lite.UI
             return new FlatButton(t, fg) { Size = new Size(w, h), Location = new Point(x, y) };
         }
 
-        private void UpdateCustomBar(Point pt, Panel panel)
-        {
-            int numBars = 25;
-            float barWidth = (panel.Width - 40) / (float)numBars;
-            float maxH = panel.Height - 40;
-            int index = (int)((pt.X - 20) / barWidth);
-            if (index >= 0 && index < numBars)
-            {
-                float y = pt.Y;
-                float h = panel.Height - 20 - y;
-                double weight = h / maxH;
-                weight = Math.Max(0, Math.Min(1, weight));
-                _cfg.CustomCpsWeights[index] = weight;
-                panel.Invalidate();
-            }
-        }
-
-        private void UpdateCustomStats()
-        {
-            double sum = 0, exp = 0;
-            for (int i = 0; i < 25; i++)
-            {
-                sum += _cfg.CustomCpsWeights[i];
-                exp += (i + 1) * _cfg.CustomCpsWeights[i];
-            }
-            if (sum > 0)
-            {
-                double avg = exp / sum;
-                double var = 0;
-                for (int i = 0; i < 25; i++)
-                {
-                    double p = _cfg.CustomCpsWeights[i] / sum;
-                    var += p * Math.Pow((i + 1) - avg, 2);
-                }
-                _customStats.Text = string.Format("Statistics:\nAverage CPS: {0:F2}\nVariance: {1:F2}\nTotal Weight: {2:F2}", avg, var, sum);
-            }
-            else
-            {
-                _customStats.Text = "Statistics:\nAverage CPS: 0.00\nVariance: 0.00\nTotal Weight: 0.00";
-            }
-        }
 
         void SetTab(int t)
         {
@@ -1322,72 +1398,10 @@ namespace lospoderosos_lite.UI
             }
         }
 
-        private void DrawCustomChart(object sender, PaintEventArgs e)
-        {
-            Graphics g = e.Graphics;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-
-            int numBars = 25;
-            float barWidth = ((Panel)sender).Width - 40;
-            barWidth /= numBars;
-            float maxH = ((Panel)sender).Height - 40;
-
-            for (int i = 0; i < numBars; i++)
-            {
-                float x = 20 + i * barWidth;
-                float w = barWidth - 4;
-                double weight = _cfg.CustomCpsWeights[i];
-                float h = (float)(weight * maxH);
-                if (h > maxH) h = maxH;
-                if (h < 0) h = 0;
-                float y = ((Panel)sender).Height - 20 - h;
-
-                using (Brush b = new SolidBrush(Color.FromArgb(40, 40, 40)))
-                    g.FillRectangle(b, x, 20, w, maxH);
-                using (Brush b = new SolidBrush(weight > 0 ? _accentColor : DIM))
-                    g.FillRectangle(b, x, y, w, h);
-                SizeF sz = g.MeasureString((i + 1).ToString(), FNT);
-                using (Brush b = new SolidBrush(DIM))
-                    g.DrawString((i + 1).ToString(), FNT, b, x + (w - sz.Width) / 2, ((Panel)sender).Height - 18);
-                if (weight > 0)
-                {
-                    string txt = weight.ToString("0.00");
-                    SizeF tsz = g.MeasureString(txt, new Font("Courier New", 6F));
-                    using (Brush b = new SolidBrush(TXT))
-                        g.DrawString(txt, new Font("Courier New", 6F), b, x + (w - tsz.Width) / 2, y - 10);
-                }
-            }
-        }
 
         void Drag(object s, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left) { Win32.ReleaseCapture(); Win32.SendMessage(Handle, 0xA1, 2, 0); }
-        }
-        // Mouse interaction handlers for custom chart
-        private void CustomChartMouseDown(object sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                _isDragging = true;
-                UpdateCustomBar(e.Location, (Panel)sender);
-            }
-        }
-
-        private void CustomChartMouseMove(object sender, MouseEventArgs e)
-        {
-            if (_isDragging)
-            {
-                UpdateCustomBar(e.Location, (Panel)sender);
-            }
-        }
-
-        private void CustomChartMouseUp(object sender, MouseEventArgs e)
-        {
-            if (_isDragging)
-            {
-                _isDragging = false;
-                UpdateCustomStats();
-            }
         }
 
         // ── Thread-safe UI updates ────────────────────────────────────────────
@@ -1560,6 +1574,24 @@ namespace lospoderosos_lite.UI
 
         void LoadTaskbarIcon()
         {
+            try
+            {
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                using (var stream = assembly.GetManifestResourceStream("ImGuiApp.Resources.logo.png"))
+                {
+                    if (stream != null)
+                    {
+                        using (Bitmap bmp = new Bitmap(stream))
+                        using (Bitmap resized = new Bitmap(bmp, new Size(32, 32)))
+                        {
+                            this.Icon = Icon.FromHandle(resized.GetHicon());
+                            return;
+                        }
+                    }
+                }
+            }
+            catch { }
+
             try
             {
                 string imgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.png");

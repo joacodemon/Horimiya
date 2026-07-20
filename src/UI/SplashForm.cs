@@ -6,7 +6,7 @@
                             using System.Windows.Forms;
                             // OpenTK using directives removed (not available)
 
-                            namespace lospoderosos_lite.UI
+                            namespace Horimiya.UI
                             {
                                 public class SplashForm : Form
                                 {
@@ -36,17 +36,32 @@
                      ControlStyles.DoubleBuffer, true);
             try
             {
-                string imgPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.png");
-                if (System.IO.File.Exists(imgPath))
+                var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+                using (var stream = assembly.GetManifestResourceStream("ImGuiApp.Resources.logo.png"))
                 {
-                    using (var fs = new System.IO.FileStream(imgPath, System.IO.FileMode.Open, System.IO.FileAccess.Read))
-                    using (Image temp = Image.FromStream(fs))
+                    if (stream != null)
                     {
-                        _logo = new Bitmap(temp);
+                        _logo = new Bitmap(stream);
                     }
                 }
             }
             catch { }
+            if (_logo == null)
+            {
+                try
+                {
+                    string imgPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logo.png");
+                    if (System.IO.File.Exists(imgPath))
+                    {
+                        using (var fs = new System.IO.FileStream(imgPath, System.IO.FileMode.Open, System.IO.FileAccess.Read))
+                        using (Image temp = Image.FromStream(fs))
+                        {
+                            _logo = new Bitmap(temp);
+                        }
+                    }
+                }
+                catch { }
+            }
             _timer = new System.Windows.Forms.Timer();
             _timer.Interval = 25;
             _timer.Tick += OnTick;
@@ -117,7 +132,7 @@
             }
 
             // Title
-            string title = "los poderosisimos";
+            string title = "Horimiya";
             var titleSize = g.MeasureString(title, FNTBIG);
             using (var b = new SolidBrush(Color.FromArgb(240, 240, 240)))
                 g.DrawString(title, FNTBIG, b, (Width - titleSize.Width) / 2, 185);

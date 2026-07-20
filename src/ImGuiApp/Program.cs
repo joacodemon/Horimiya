@@ -3,9 +3,11 @@ using System.IO;
 using System.Windows.Forms;
 using System.Threading;
 using System.Runtime.InteropServices;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Modules;
-using lospoderosos_lite.Utils;
+using Horimiya.Auth;
+using Horimiya.Config;
+using Horimiya.Modules;
+using Horimiya.UI;
+using Horimiya.Utils;
 
 internal static class Program
 {
@@ -25,10 +27,54 @@ internal static class Program
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // ── Authentication ────────────────────────────────────────────────
+            var cfg = AppConfig.Load("default");
+            bool autoAuthed = false;
+
+            // Try reading license key from dedicated file (next to the exe)
+            string licenseFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "license.key");
+            if (File.Exists(licenseFilePath))
+            {
+                string savedKey = File.ReadAllText(licenseFilePath).Trim();
+                if (!string.IsNullOrEmpty(savedKey))
+                {
+                    cfg.LicenseKey = savedKey; // sync into config
+                }
+            }
+
+            if (!string.IsNullOrEmpty(cfg.LicenseKey))
+            {
+                var result = Horimiya.Auth.AuthManager.Authenticate(cfg.LicenseKey);
+                if (result.Success)
+                {
+                    autoAuthed = true;
+                }
+            }
+
+            if (!autoAuthed)
+            {
+                using (var loginForm = new LoginForm())
+                {
+                    var loginResult = loginForm.ShowDialog();
+                    if (loginResult != DialogResult.OK)
+                    {
+                        // User closed the window or auth failed — do not launch
+                        return;
+                    }
+                }
+                // Reload config so the LicenseKey saved by LoginForm is now in memory
+                cfg = AppConfig.Load("default");
+                // Also sync from license.key file if it was just created
+                if (File.Exists(licenseFilePath))
+                {
+                    string savedKey = File.ReadAllText(licenseFilePath).Trim();
+                    if (!string.IsNullOrEmpty(savedKey)) cfg.LicenseKey = savedKey;
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────
+
             // Setup Dependency Injection Container
             var container = new DependencyContainer();
-
-            var cfg = AppConfig.Load("default");
 
             container.RegisterSingleton<AppConfig>(cfg);
 
@@ -59,34 +105,34 @@ internal static class Program
             AllocConsole();
             IntPtr consoleHwnd = GetConsoleWindow();
             
-            Console.Title = "Los Poderosisimos - Authenticating";
+            Console.Title = "Horimiya - Authenticating";
             Console.CursorVisible = false;
             
             // Render ASCII
-            Console.ForegroundColor = ConsoleColor.DarkBlue;
+            Console.ForegroundColor = ConsoleColor.DarkMagenta;
             Console.WriteLine("");
-            Console.WriteLine(@"    __                                       _      _      _                    ");
-            Console.WriteLine(@"   / /  ___  ___   _ __   ___   __| |  ___  _ __ ___  ___ (_) ___ (_) _ __ ___   ___  ___       ");
-            Console.WriteLine(@"  / /  / _ \/ __| | '_ \ / _ \ / _` | / _ \| '__|/ _ \/ __|| |/ __|| || '_ ` _ \ / _ \/ __|      ");
-            Console.WriteLine(@" / /__| (_) \__ \ | |_) | (_) | (_| ||  __/| |  | (_) \__ \| |\__ \| || | | | | | (_) \__ \      ");
-            Console.WriteLine(@" \____/\___/|___/ | .__/ \___/ \__,_| \___||_|   \___/|___/|_||___/|_||_| |_| |_|\___/|___/      ");
-            Console.WriteLine(@"                  |_|                                                                          ");
+            Console.WriteLine(@"    _   _            _           _              ");
+            Console.WriteLine(@"   | | | | ___  _ __(_)_ __ ___ (_)_   _  __ _   ");
+            Console.WriteLine(@"   | |_| |/ _ \| '__| | '_ ` _ \| | | | |/ _` |  ");
+            Console.WriteLine(@"   |  _  | (_) | |  | | | | | | | | |_| | (_| |  ");
+            Console.WriteLine(@"   |_| |_|\___/|_|  |_|_| |_| |_|_|\__, |\__,_|  ");
+            Console.WriteLine(@"                                   |___/         ");
             
             Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           3.1.0\n\n");
+            Console.WriteLine("                                           1.0.1\n\n");
             
             Console.WriteLine("Authenticating...");
             Console.WriteLine("");
 
             // Check for updates automatically
-            Updater.CheckForUpdates("3.1.0");
+            Updater.CheckForUpdates("1.0.1");
             Console.WriteLine("");
             
             int totalBlocks = 30;
             Console.Write(" ");
             for (int i = 0; i < totalBlocks; i++)
             {
-                Console.ForegroundColor = ConsoleColor.Blue;
+                Console.ForegroundColor = ConsoleColor.Magenta;
                 Console.Write((char)9608); // Solid block
                 Thread.Sleep(50); // Simula el tiempo de carga
             }

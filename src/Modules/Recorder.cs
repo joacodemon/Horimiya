@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using lospoderosos_lite.Config;
-using lospoderosos_lite.Utils;
+using Horimiya.Config;
+using Horimiya.Utils;
 
-namespace lospoderosos_lite.Modules
+namespace Horimiya.Modules
 {
     public class MacroEv
     {

@@ -1,0 +1,146 @@
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Panel de Administración - Horimiya</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px; }
+            h1, h2 { color: #89b4fa; }
+            .container { max-width: 800px; margin: 0 auto; background-color: #181825; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+            .card { background-color: #313244; padding: 15px; margin-bottom: 20px; border-radius: 8px; }
+            input, select, button { padding: 10px; margin: 5px 0; border-radius: 5px; border: 1px solid #45475a; background-color: #1e1e2e; color: #cdd6f4; width: 100%; box-sizing: border-box; }
+            button { background-color: #89b4fa; color: #11111b; font-weight: bold; cursor: pointer; border: none; }
+            button:hover { background-color: #b4befe; }
+            .row { display: flex; gap: 10px; }
+            .row > * { flex: 1; }
+            #response-box { background-color: #11111b; padding: 15px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; min-height: 50px;}
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #45475a; padding: 8px; text-align: left; }
+            th { background-color: #11111b; }
+            .success { color: #a6e3a1; }
+            .error { color: #f38ba8; }
+        </style>
+    </head>
+    <body>
+
+    <div class="container">
+        <h1>Panel de Licencias (Horimiya)</h1>
+
+        <div class="card">
+            <h2>1. Contraseña (Admin Secret)</h2>
+            <p>Escribe aquí tu contraseña para poder hacer cambios:</p>
+            <input type="password" id="admin-secret" placeholder="Ej: youngflexd1233" value="youngflexd1233">
+        </div>
+
+        <div class="card">
+            <h2>2. Generar nueva Licencia</h2>
+            <div class="row">
+                <input type="text" id="new-user" placeholder="Nombre del usuario (ej: joaquin)">
+                <select id="new-type">
+                    <option value="trial">Prueba (7 días)</option>
+                    <option value="monthly">Mensual (30 días)</option>
+                    <option value="quartly">Trimestral (90 días)</option>
+                    <option value="lifetime">De por vida</option>
+                </select>
+            </div>
+            <button onclick="createKey()">Generar Llave</button>
+        </div>
+
+        <div class="card">
+            <h2>3. Base de datos y Lista</h2>
+            <div class="row">
+                <button onclick="initDb()" style="background-color: #f38ba8;">Inicializar Base de Datos (Solo 1ra vez)</button>
+                <button onclick="listKeys()">Ver todas las Licencias</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Resultado:</h2>
+            <div id="response-box">Esperando acción...</div>
+        </div>
+    </div>
+
+    <script>
+        // La URL de tu API
+        const apiUrl = 'admin.php'; 
+
+        function getSecret() {
+            return document.getElementById('admin-secret').value;
+        }
+
+        function showResponse(text, isError = false) {
+            const box = document.getElementById('response-box');
+            box.innerHTML = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
+            box.className = isError ? 'error' : 'success';
+        }
+
+        async function apiRequest(action, extraParams = '') {
+            const secret = getSecret();
+            if(!secret) { showResponse("Por favor, ingresa la contraseña arriba.", true); return; }
+
+            showResponse("Cargando...");
+            try {
+                const url = `${apiUrl}?secret=${encodeURIComponent(secret)}&action=${action}${extraParams}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (action === 'list_keys' && data.success) {
+                    renderTable(data.licenses);
+                } else {
+                    showResponse(data);
+                }
+            } catch (error) {
+                showResponse("Error de conexión. ¿Subiste este archivo al hosting?", true);
+            }
+        }
+
+        function renderTable(licenses) {
+            if (!licenses || licenses.length === 0) {
+                showResponse("No hay licencias todavía.");
+                return;
+            }
+            let html = '<table><tr><th>ID</th><th>Usuario</th><th>Llave</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr>';
+            licenses.forEach(l => {
+                const estado = l.is_active == 1 ? '<span class="success">Activa</span>' : '<span class="error">Inactiva</span>';
+                const revokeAction = l.is_active == 1 ? `<button class="btn-sm" onclick="actionKey('revoke_key', ${l.id})">Desactivar</button>` : `<button class="btn-sm" onclick="actionKey('activate_key', ${l.id})">Activar</button>`;
+                
+                html += `<tr>
+                    <td>${l.id}</td>
+                    <td>${l.username}</td>
+                    <td>${l.license_key_display}</td>
+                    <td>${l.license_type}</td>
+                    <td>${estado}</td>
+                    <td>
+                        <button class="btn-sm" onclick="actionKey('delete_key', ${l.id})" style="background-color: #f38ba8; color: #11111b;">Eliminar</button>
+                        ${revokeAction}
+                        <button class="btn-sm" onclick="actionKey('reset_hwid', ${l.id})">Reset HWID</button>
+                    </td>
+                </tr>`;
+            });
+            html += '</table>';
+            document.getElementById('response-box').innerHTML = html;
+            document.getElementById('response-box').className = '';
+        }
+
+        function initDb() { apiRequest('create_db'); }
+        function listKeys() { apiRequest('list_keys'); }
+        
+        function createKey() {
+            const user = document.getElementById('new-user').value;
+            const type = document.getElementById('new-type').value;
+            if(!user) { showResponse("Debes poner un nombre de usuario.", true); return; }
+            apiRequest('create_key', `&username=${encodeURIComponent(user)}&license_type=${encodeURIComponent(type)}`);
+        }
+
+        function actionKey(action, id) {
+            if (action === 'delete_key' && !confirm('¿Estás seguro de que quieres eliminar esta licencia permanentemente?')) return;
+            apiRequest(action, `&id=${id}`).then(() => {
+                // Recargar lista después de la acción (con un pequeño delay)
+                setTimeout(listKeys, 500);
+            });
+        }
+    </script>
+
+    </body>
+    </html>

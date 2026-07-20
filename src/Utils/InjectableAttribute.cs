@@ -1,6 +1,6 @@
-using System;
+﻿using System;
 
-namespace lospoderosos_lite.Utils
+namespace Horimiya.Utils
 {
     [AttributeUsage(AttributeTargets.Class, Inherited = false)]
     public class InjectableAttribute : Attribute

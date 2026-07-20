@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Text;
 using System.Threading.Tasks;
 using MQTTnet;
 using MQTTnet.Client;
-using lospoderosos_lite.Config;
+using Horimiya.Config;
 
-namespace lospoderosos_lite.IoT
+namespace Horimiya.IoT
 {
     public class IoTManager : IDisposable
     {
