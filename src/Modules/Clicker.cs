@@ -723,6 +723,12 @@ namespace Horimiya.Modules
                         Thread.Sleep(10);
                         continue;
                     }
+                    else if (!IsItemUnderCursor(foregroundWnd))
+                    {
+                        if (globalHoldActive) { Win32.SendRightUp(); globalHoldActive = false; }
+                        Thread.Sleep(5);
+                        continue;
+                    }
                 }
 
                 double targetCps = _cfg.RightAverageCps;
@@ -1005,10 +1011,27 @@ namespace Horimiya.Modules
             string title = _titleBuffer.ToString().ToLower();
 
             // Strict block list: Never click on our own app or common system windows
-            if (title.Contains("Horimiya") || title == "program manager" || title == "")
+            if (title.Contains("lospoderosisimos") || title.Contains("horimiya") || title == "program manager" || title == "")
                 return false;
 
-            return title.Contains("minecraft") ||
+            uint processId;
+            Win32.GetWindowThreadProcessId(hwnd, out processId);
+            string processName = "";
+            try {
+                using (var proc = System.Diagnostics.Process.GetProcessById((int)processId)) {
+                    processName = proc.ProcessName.ToLower();
+                }
+            } catch { }
+
+            // Restrict to known Minecraft processes (javaw, lunar, badlion, feather, etc.)
+            if (!processName.Contains("javaw") && !processName.Contains("java") && 
+                !processName.Contains("lunar") && !processName.Contains("badlion") && 
+                !processName.Contains("cb") && !processName.Contains("cheatbreaker") && 
+                !processName.Contains("feather")) {
+                return false;
+            }
+
+            bool isMc = title.Contains("minecraft") ||
                    title.Contains("lunar")     ||
                    title.Contains("badlion")   ||
                    title.Contains("labymod")   ||
@@ -1018,6 +1041,25 @@ namespace Horimiya.Modules
                    title.Contains("salwyrr")   ||
                    title.Contains("joacodemon") ||
                    title.Contains("cheatbreaker");
+                   
+            if (!isMc && _cfg != null && _cfg.Presets != null)
+            {
+                foreach (var preset in _cfg.Presets)
+                {
+                    if (string.IsNullOrWhiteSpace(preset.Server)) continue;
+                    string[] servers = preset.Server.ToLower().Split(new string[] { " / " }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var server in servers)
+                    {
+                        if (title.Contains(server.Trim()))
+                        {
+                            isMc = true;
+                            break;
+                        }
+                    }
+                    if (isMc) break;
+                }
+            }
+            return isMc;
         }
 
         // ── Cached cursor visibility: reduces P/Invoke calls ──
@@ -1040,9 +1082,23 @@ namespace Horimiya.Modules
             ci.cbSize = Marshal.SizeOf(ci);
             if (Win32.GetCursorInfo(ref ci))
             {
-                // flags == 0 means cursor is hidden (Minecraft hides cursor in-game)
-                // flags != 0 means cursor is visible (menu, inventory, etc.)
-                return ci.flags != 0;
+                // In some clients, flags == 1 even when the cursor is supposedly hidden.
+                // But when the inventory is actually open, the cursor becomes the standard Arrow or IBeam.
+                // We check if the current cursor matches any standard Windows cursors.
+                if (ci.flags == 0) return false;
+
+                IntPtr hArrow = Win32.LoadCursor(IntPtr.Zero, 32512); // IDC_ARROW
+                IntPtr hIBeam = Win32.LoadCursor(IntPtr.Zero, 32513); // IDC_IBEAM
+                IntPtr hHand = Win32.LoadCursor(IntPtr.Zero, 32649);  // IDC_HAND
+
+                if (ci.hCursor == hArrow || ci.hCursor == hIBeam || ci.hCursor == hHand)
+                {
+                    return true;
+                }
+                
+                // If it's visible but not a standard cursor, assume it's a custom game cursor (which might just be the crosshair or hidden).
+                // Returning false here allows clicking to proceed in-game even if the client didn't properly hide the cursor.
+                return false;
             }
             return false;
         }
@@ -1148,6 +1204,89 @@ namespace Horimiya.Modules
             _spare = v * s;
             _hasSpare = true;
             return u * s;
+        }
+
+        /// <summary>
+        /// Samples a grid of pixels around the current cursor position and checks if there
+        /// is an item present. Minecraft's empty slots have a uniform dark background (~55,55,55).
+        /// Items have varied/colorful pixels with high color variance. Returns true if an item
+        /// is likely present under the cursor.
+        /// </summary>
+        private bool IsItemUnderCursor(IntPtr hwnd)
+        {
+            try
+            {
+                System.Drawing.Point screenPt;
+                Win32.GetCursorPos(out screenPt);
+
+                IntPtr hdc = Win32.GetDC(IntPtr.Zero); // screen DC
+                if (hdc == IntPtr.Zero) return false;
+
+                try
+                {
+                    // Sample a 5x5 grid of pixels centered on cursor
+                    int[] offsets = { -8, -4, 0, 4, 8 };
+                    long sumR = 0, sumG = 0, sumB = 0;
+                    int count = 0;
+                    int[] reds = new int[25];
+                    int[] greens = new int[25];
+                    int[] blues = new int[25];
+
+                    int idx = 0;
+                    foreach (int dy in offsets)
+                    {
+                        foreach (int dx in offsets)
+                        {
+                            uint pixel = Win32.GetPixel(hdc, screenPt.X + dx, screenPt.Y + dy);
+                            if (pixel == 0xFFFFFFFF) { idx++; continue; }
+                            byte r = (byte)(pixel & 0xFF);
+                            byte g = (byte)((pixel >> 8) & 0xFF);
+                            byte b = (byte)((pixel >> 16) & 0xFF);
+                            reds[idx] = r; greens[idx] = g; blues[idx] = b;
+                            sumR += r; sumG += g; sumB += b;
+                            count++;
+                            idx++;
+                        }
+                    }
+
+                    if (count < 5) return false;
+
+                    double avgR = (double)sumR / count;
+                    double avgG = (double)sumG / count;
+                    double avgB = (double)sumB / count;
+
+                    // Calculate variance across sampled pixels
+                    double varSum = 0;
+                    for (int i = 0; i < idx; i++)
+                    {
+                        if (reds[i] == 0 && greens[i] == 0 && blues[i] == 0) continue;
+                        double dr = reds[i] - avgR;
+                        double dg = greens[i] - avgG;
+                        double db = blues[i] - avgB;
+                        varSum += dr * dr + db * db + dg * dg;
+                    }
+                    double variance = varSum / count;
+
+                    // Empty Minecraft slot background: dark uniform gray (~55,55,55)
+                    // If average is dark and variance is very low -> empty slot, no item
+                    bool isDarkBackground = avgR < 80 && avgG < 80 && avgB < 80;
+                    bool isLowVariance = variance < 400; // Low variation = uniform color = empty slot
+
+                    // If it's a dark uniform background -> no item
+                    if (isDarkBackground && isLowVariance) return false;
+
+                    // Bright or varied pixels -> item is present
+                    return true;
+                }
+                finally
+                {
+                    Win32.ReleaseDC(IntPtr.Zero, hdc);
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
 
     }
