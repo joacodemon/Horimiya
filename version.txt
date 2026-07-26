@@ -1,1 +1,1 @@
-﻿1.0.1|https://github.com/joacodemon/Horimiya/releases/download/Horimiya/Horimiya.exe
+﻿1.0.1|https://github.com/joacodemon/Horimiya/releases/tag/1.0.1
