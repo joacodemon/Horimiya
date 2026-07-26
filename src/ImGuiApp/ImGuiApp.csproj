@@ -4,7 +4,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <Nullable>enable</Nullable>
+    <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>10.0</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
@@ -32,7 +32,6 @@
     <PackageReference Include="OpenTK.GLControl" Version="3.3.3" />
     <Compile Include="..\Modules\HitDetector.cs" />
     <Compile Include="..\Modules\Clicker.cs" />
-    <Compile Include="..\Modules\RightClicker.cs" />
     <Compile Include="..\Modules\Misc.cs" />
     <Compile Include="..\Modules\Recorder.cs" />
     <Compile Include="..\Modules\Updater.cs" />

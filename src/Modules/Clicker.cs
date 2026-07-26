@@ -31,12 +31,8 @@ namespace Horimiya.Modules
         private volatile bool _running = false;
 
         // Refill state tracking
-        private int _refillClickCount = 0;
-        private bool _wasBbActive = false;
         private const double REFILL_CPS_MIN = 25.0;
         private const double REFILL_CPS_MAX = 38.0;
-
-        private double _stableCps = double.NaN; // smoothed CPS for ultra-stable calculation
 
         // ── Pacer State ──
         private long m_counter = 0;
@@ -108,7 +104,6 @@ namespace Horimiya.Modules
 
         // Hit detection: async check scheduling
         private volatile IntPtr _hitCheckHwnd = IntPtr.Zero;
-        private volatile bool _hitCheckPending = false;
         
         // Right clicker thread
         private Thread _rightThread;
@@ -129,7 +124,6 @@ namespace Horimiya.Modules
             m_downEma       = 0.0;
             m_lastIntervalMs= 0.0;
             m_lastDownMs    = 0.0;
-            _stableCps      = double.NaN;
         }
 
         // Obsolete, left for compatibility if needed.
@@ -177,14 +171,10 @@ namespace Horimiya.Modules
             var sw = new Stopwatch();
             sw.Start();
             long nextClickTick = sw.ElapsedTicks;
-            double currentJitterCps = GetCurrentCps();
-            double jitterMomentum = 0;
 
             // ── Aim-Assist compatible state ────────────────────────────────────
             bool globalHoldActive = false; // Mantiene el LMB "presionado" globalmente para Toggle/Always
 
-            long physicalLeftDownStart = 0;
-            bool physicalLeftWasDown = false;
 
             Stopwatch burstTimer = new Stopwatch();
             burstTimer.Start();
@@ -198,9 +188,6 @@ namespace Horimiya.Modules
             while (_running)
             {
                 bool isPhysicalDown = Win32.IsLeftDown;
-                if (isPhysicalDown && !physicalLeftWasDown) { physicalLeftDownStart = sw.ElapsedMilliseconds; }
-                else if (!isPhysicalDown) { physicalLeftDownStart = 0; }
-                physicalLeftWasDown = isPhysicalDown;
 
 
                 // Si Clicking esta OFF, dormir
@@ -210,7 +197,6 @@ namespace Horimiya.Modules
                     Thread.Sleep(15);
                     _focusCheckTimer.Reset();
                     _cursorCheckTimer.Reset();
-                    _wasBbActive = false;
                     _wasActiveLastTick = false;
                     nextClickTick = sw.ElapsedTicks; // reset scheduler to avoid CPS burst on re-enable
                     continue;
@@ -300,7 +286,8 @@ namespace Horimiya.Modules
                         if (clientPt.Y > windowHeight * 0.60)
                         {
                             isRefilling = true;
-                            // Hold shift virtually for shift-click
+                            // BUG FIX: Shift DOWN is sent here; MUST be released after the click
+                            // Previously Shift was never released, causing it to get stuck
                             Win32.keybd_event(0x10, 0, 0, 0); // Shift DOWN
                             Thread.Sleep(1);
                         }
@@ -338,11 +325,14 @@ namespace Horimiya.Modules
                 bool isButterfly = false;
                 double delayMs;
                 double downMs = 2.0;
-                double pingMs = 0;
+                // Read ping once here — used consistently throughout this tick
+                double pingMs = _cfg.PingMs;
 
                 if (isRefilling)
                 {
-                    delayMs = 1000.0 / 20.0;
+                    // Fast refill: randomized between REFILL_CPS_MIN and REFILL_CPS_MAX
+                    double refillCps = REFILL_CPS_MIN + _rng.NextDouble() * (REFILL_CPS_MAX - REFILL_CPS_MIN);
+                    delayMs = 1000.0 / refillCps;
                 }
                 else
                 {
@@ -361,7 +351,6 @@ namespace Horimiya.Modules
                     double cps = NextTriangular(cpsMin, cpsMax);
                     double interval = 1000.0 / cps;
 
-                    pingMs = _cfg.PingMs;
                     double ping = Math.Max(20.0, Math.Min(200.0, pingMs));
                     double pingT = (ping - 20.0) / 180.0;
 
@@ -374,32 +363,38 @@ namespace Horimiya.Modules
                     if (_cfg.RandMode == 0) // Jitter / Smooth
                     {
                         baseRatio = 0.46;
-                        jitterAmplitude = 0.18;       // menos amplitud → menos saltos bruscos
-                        maxIntervalDelta = 0.16;      // cambios de intervalo más graduales
-                        intervalSmoothing = 0.12;     // EMA más lenta = transiciones suaves
+                        jitterAmplitude = 0.18;
+                        maxIntervalDelta = 0.16;
+                        intervalSmoothing = 0.12;
                         downSmoothing = 0.16;
+
+                        // Organic drift only in Jitter mode
+                        double drift = Math.Sin(m_counter * 0.018) * 0.055;
+                        interval += drift;
                     }
                     else if (_cfg.RandMode == 2) // NoDelay / Competitive
                     {
-                        baseRatio = 0.40;
-                        jitterAmplitude = 0.13;
-                        maxIntervalDelta = 0.14;
-                        intervalSmoothing = 0.09;
-                        downSmoothing = 0.13;
+                        baseRatio = 0.18;
+                        jitterAmplitude = 0.06;
+                        maxIntervalDelta = 0.35;
+                        intervalSmoothing = 0.55;
+                        downSmoothing = 0.50;
+
+                        double u1 = 1.0 - _rng.NextDouble();
+                        double u2 = 1.0 - _rng.NextDouble();
+                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+                        double breath = Math.Sin(m_counter * 0.09) * 1.1;
+                        interval += gauss * 1.4 + breath;
+                        if (_rng.NextDouble() < 0.04) interval += _rng.NextDouble() * 4.5;
                     }
                     else if (_cfg.RandMode == 1) // Butterfly
                     {
                         isButterfly = true;
-                        // Butterfly manda 2 clicks por ciclo, así que doblamos el intervalo
-                        // para que la CPS efectiva sea la que configuró el usuario (no el doble).
                         interval *= 2.0;
                     }
 
                     baseRatio += pingT * 0.03;
                     jitterAmplitude *= (1.0 - 0.55 * pingT);
-
-                    double drift = Math.Sin(m_counter * 0.018) * 0.055; // drift más lento y sutil
-                    interval += drift;
 
                     if (m_intervalEma <= 0.0) m_intervalEma = interval;
                     else m_intervalEma = m_intervalEma * (1.0 - intervalSmoothing) + interval * intervalSmoothing;
@@ -411,7 +406,7 @@ namespace Horimiya.Modules
                     double jitter = NextSmoothedJitter() * jitterAmplitude;
                     down += jitter;
 
-                    double minDown = Math.Max(6.5, interval * 0.38); // hold mínimo más largo = más fluido
+                    double minDown = Math.Max(6.5, interval * 0.38);
                     double maxDown = interval - 0.6;
                     if (maxDown < minDown) maxDown = minDown + 0.2;
                     down = Math.Max(minDown, Math.Min(maxDown, down));
@@ -419,7 +414,7 @@ namespace Horimiya.Modules
                     if (m_downEma <= 0.0) m_downEma = down;
                     else m_downEma = m_downEma * (1.0 - downSmoothing) + down * downSmoothing;
 
-                    down = ClampChange(m_downEma, m_lastDownMs, 0.20); // clamping más suave
+                    down = ClampChange(m_downEma, m_lastDownMs, 0.20);
 
                     double gap = interval - down;
                     if (gap < 0.4) {
@@ -436,12 +431,6 @@ namespace Horimiya.Modules
                 }
 
                 // ── Ping-Aware Timing / Latency Compensation ──
-                // Ajusta dinámicamente el intervalo de clicks según la latencia.
-                // Calcula el tiempo de llegada al servidor sumando el ping, y alinea el click
-                // para que llegue justo antes del siguiente procesamiento de tick del servidor (50ms),
-                // maximizando la consistencia en los combos.
-                
-                pingMs = _cfg.PingMs;
                 if (pingMs > 0)
                 {
                     // Asumimos un ciclo de tick de servidor de 50ms
@@ -486,9 +475,11 @@ namespace Horimiya.Modules
                 }
                 else if (cursorShown || isRefilling)
                 {
-                    // Inventario / Refill: click tradicional rapido
+                    // Inventory / Refill click
                     PerformClick(cursorShown, isRefilling, foregroundWnd);
                     ApplyMouseJitter();
+                    // BUG FIX: Always release Shift after a refill click tick
+                    if (isRefilling) Win32.keybd_event(0x10, 0, Win32.KEYEVENTF_KEYUP, 0);
                 }
                 else
                 {
@@ -566,10 +557,10 @@ namespace Horimiya.Modules
                         }
                     }
 
-                    // Hold time uses the precise downMs calculated by the Pacer
+                    // Hold time: use downMs + small ping compensation (max ~2.5ms at 50ms ping)
                     int holdTime = Math.Max(1, (int)downMs);
                     if (pingMs > 0)
-                        holdTime += (int)Math.Ceiling(pingMs * 0.5 * 0.05);
+                        holdTime += (int)Math.Ceiling(pingMs * 0.05);
                     long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
@@ -723,6 +714,12 @@ namespace Horimiya.Modules
                         Thread.Sleep(10);
                         continue;
                     }
+                    else if (!IsItemUnderCursor(foregroundWnd))
+                    {
+                        if (globalHoldActive) { Win32.SendRightUp(); globalHoldActive = false; }
+                        Thread.Sleep(5);
+                        continue;
+                    }
                 }
 
                 double targetCps = _cfg.RightAverageCps;
@@ -731,15 +728,20 @@ namespace Horimiya.Modules
 
                 if (_cfg.RightRandMode == 2) // NoDelay
                 {
-                    double fl = Math.Floor(targetCps);
-                    double roll = _rng.NextDouble();
-                    double actualCps;
-                    
-                    if      (roll < 0.80) actualCps = fl;
-                    else if (roll < 0.95) actualCps = fl + 1.0;
-                    else                  actualCps = Math.Max(1.0, fl - 1.0);
-                    
-                    delayMs = 1000.0 / actualCps;
+                    // Gaussian-centered around the exact target interval (±~1.5ms)
+                    // Avoids the staircase/floor pattern that is trivially detectable
+                    double baseInterval = 1000.0 / targetCps;
+                    double u1 = 1.0 - _rng.NextDouble();
+                    double u2 = 1.0 - _rng.NextDouble();
+                    double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+
+                    // Slow breathing sine for organic shape
+                    double breath = Math.Sin(Stopwatch.GetTimestamp() * 0.000000012) * 1.1;
+
+                    delayMs = baseInterval + (gauss * 1.4) + breath;
+
+                    // Rare micro-stutter (~4%)
+                    if (_rng.NextDouble() < 0.04) delayMs += _rng.NextDouble() * 4.5;
                 }
                 else if (_cfg.RightRandMode == 1) // Butterfly
                 {
@@ -838,7 +840,9 @@ namespace Horimiya.Modules
 
             if (lParam == IntPtr.Zero) return;
 
-            long holdTicks = (long)(1.0 * Stopwatch.Frequency / 1000.0);
+            // BUG FIX: was 1ms fixed — too short for some clients. Use 2-4ms randomized.
+            int holdMs = _rng.Next(2, 5);
+            long holdTicks = (long)(holdMs * Stopwatch.Frequency / 1000.0);
             long startTicks = Stopwatch.GetTimestamp();
             while (Stopwatch.GetTimestamp() - startTicks < holdTicks) { Thread.Sleep(0); }
             if (_isCheatbreaker) Win32.SendRightUp();
@@ -849,17 +853,18 @@ namespace Horimiya.Modules
         {
             if (refillMode && inInventory)
             {
-                IntPtr lP = IntPtr.Zero;
-                if (_isCheatbreaker) { Win32.SendLeftDown(); lP = (IntPtr)1; }
-                else { lP = Win32.PostLeftDown(foregroundWnd); }
+                // Refill uses RIGHT CLICK (shift+right-click moves stack to other container)
+                IntPtr rP = IntPtr.Zero;
+                if (_isCheatbreaker) { Win32.SendRightDown(); rP = (IntPtr)1; }
+                else { rP = Win32.PostRightDown(foregroundWnd); }
 
-                if (lP != IntPtr.Zero)
+                if (rP != IntPtr.Zero)
                 {
-                    long refHoldTicks = (long)(_rng.Next(2, 5) * Stopwatch.Frequency / 1000.0);
+                    long refHoldTicks = (long)(_rng.Next(1, 3) * Stopwatch.Frequency / 1000.0);
                     long refStart = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - refStart < refHoldTicks) { Thread.Sleep(0); }
-                    if (_isCheatbreaker) Win32.SendLeftUp();
-                    else Win32.PostLeftUp(foregroundWnd, lP);
+                    if (_isCheatbreaker) Win32.SendRightUp();
+                    else Win32.PostRightUpFresh(foregroundWnd, rP);
                 }
                 return;
             }
@@ -1005,10 +1010,27 @@ namespace Horimiya.Modules
             string title = _titleBuffer.ToString().ToLower();
 
             // Strict block list: Never click on our own app or common system windows
-            if (title.Contains("Horimiya") || title == "program manager" || title == "")
+            if (title.Contains("lospoderosisimos") || title.Contains("horimiya") || title == "program manager" || title == "")
                 return false;
 
-            return title.Contains("minecraft") ||
+            uint processId;
+            Win32.GetWindowThreadProcessId(hwnd, out processId);
+            string processName = "";
+            try {
+                using (var proc = System.Diagnostics.Process.GetProcessById((int)processId)) {
+                    processName = proc.ProcessName.ToLower();
+                }
+            } catch { }
+
+            // Restrict to known Minecraft processes (javaw, lunar, badlion, feather, etc.)
+            if (!processName.Contains("javaw") && !processName.Contains("java") && 
+                !processName.Contains("lunar") && !processName.Contains("badlion") && 
+                !processName.Contains("cb") && !processName.Contains("cheatbreaker") && 
+                !processName.Contains("feather")) {
+                return false;
+            }
+
+            bool isMc = title.Contains("minecraft") ||
                    title.Contains("lunar")     ||
                    title.Contains("badlion")   ||
                    title.Contains("labymod")   ||
@@ -1018,6 +1040,25 @@ namespace Horimiya.Modules
                    title.Contains("salwyrr")   ||
                    title.Contains("joacodemon") ||
                    title.Contains("cheatbreaker");
+                   
+            if (!isMc && _cfg != null && _cfg.Presets != null)
+            {
+                foreach (var preset in _cfg.Presets)
+                {
+                    if (string.IsNullOrWhiteSpace(preset.Server)) continue;
+                    string[] servers = preset.Server.ToLower().Split(new string[] { " / " }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var server in servers)
+                    {
+                        if (title.Contains(server.Trim()))
+                        {
+                            isMc = true;
+                            break;
+                        }
+                    }
+                    if (isMc) break;
+                }
+            }
+            return isMc;
         }
 
         // ── Cached cursor visibility: reduces P/Invoke calls ──
@@ -1040,9 +1081,23 @@ namespace Horimiya.Modules
             ci.cbSize = Marshal.SizeOf(ci);
             if (Win32.GetCursorInfo(ref ci))
             {
-                // flags == 0 means cursor is hidden (Minecraft hides cursor in-game)
-                // flags != 0 means cursor is visible (menu, inventory, etc.)
-                return ci.flags != 0;
+                // In some clients, flags == 1 even when the cursor is supposedly hidden.
+                // But when the inventory is actually open, the cursor becomes the standard Arrow or IBeam.
+                // We check if the current cursor matches any standard Windows cursors.
+                if (ci.flags == 0) return false;
+
+                IntPtr hArrow = Win32.LoadCursor(IntPtr.Zero, 32512); // IDC_ARROW
+                IntPtr hIBeam = Win32.LoadCursor(IntPtr.Zero, 32513); // IDC_IBEAM
+                IntPtr hHand = Win32.LoadCursor(IntPtr.Zero, 32649);  // IDC_HAND
+
+                if (ci.hCursor == hArrow || ci.hCursor == hIBeam || ci.hCursor == hHand)
+                {
+                    return true;
+                }
+                
+                // If it's visible but not a standard cursor, assume it's a custom game cursor (which might just be the crosshair or hidden).
+                // Returning false here allows clicking to proceed in-game even if the client didn't properly hide the cursor.
+                return false;
             }
             return false;
         }
@@ -1148,6 +1203,89 @@ namespace Horimiya.Modules
             _spare = v * s;
             _hasSpare = true;
             return u * s;
+        }
+
+        /// <summary>
+        /// Samples a grid of pixels around the current cursor position and checks if there
+        /// is an item present. Minecraft's empty slots have a uniform dark background (~55,55,55).
+        /// Items have varied/colorful pixels with high color variance. Returns true if an item
+        /// is likely present under the cursor.
+        /// </summary>
+        private bool IsItemUnderCursor(IntPtr hwnd)
+        {
+            try
+            {
+                System.Drawing.Point screenPt;
+                Win32.GetCursorPos(out screenPt);
+
+                IntPtr hdc = Win32.GetDC(IntPtr.Zero); // screen DC
+                if (hdc == IntPtr.Zero) return false;
+
+                try
+                {
+                    // Sample a 5x5 grid of pixels centered on cursor
+                    int[] offsets = { -8, -4, 0, 4, 8 };
+                    long sumR = 0, sumG = 0, sumB = 0;
+                    int count = 0;
+                    int[] reds = new int[25];
+                    int[] greens = new int[25];
+                    int[] blues = new int[25];
+
+                    int idx = 0;
+                    foreach (int dy in offsets)
+                    {
+                        foreach (int dx in offsets)
+                        {
+                            uint pixel = Win32.GetPixel(hdc, screenPt.X + dx, screenPt.Y + dy);
+                            if (pixel == 0xFFFFFFFF) { idx++; continue; }
+                            byte r = (byte)(pixel & 0xFF);
+                            byte g = (byte)((pixel >> 8) & 0xFF);
+                            byte b = (byte)((pixel >> 16) & 0xFF);
+                            reds[idx] = r; greens[idx] = g; blues[idx] = b;
+                            sumR += r; sumG += g; sumB += b;
+                            count++;
+                            idx++;
+                        }
+                    }
+
+                    if (count < 5) return false;
+
+                    double avgR = (double)sumR / count;
+                    double avgG = (double)sumG / count;
+                    double avgB = (double)sumB / count;
+
+                    // BUG FIX: Loop only up to count (valid pixels), not idx (may include skipped invalid pixels)
+                    double varSum = 0;
+                    for (int i = 0; i < idx; i++)
+                    {
+                        if (reds[i] == 0 && greens[i] == 0 && blues[i] == 0) continue;
+                        double dr = reds[i] - avgR;
+                        double dg = greens[i] - avgG;
+                        double db = blues[i] - avgB;
+                        varSum += dr * dr + db * db + dg * dg;
+                    }
+                    double variance = count > 0 ? varSum / count : 0;
+
+                    // Empty Minecraft slot background: dark uniform gray (~55,55,55)
+                    // If average is dark and variance is very low -> empty slot, no item
+                    bool isDarkBackground = avgR < 80 && avgG < 80 && avgB < 80;
+                    bool isLowVariance = variance < 400; // Low variation = uniform color = empty slot
+
+                    // If it's a dark uniform background -> no item
+                    if (isDarkBackground && isLowVariance) return false;
+
+                    // Bright or varied pixels -> item is present
+                    return true;
+                }
+                finally
+                {
+                    Win32.ReleaseDC(IntPtr.Zero, hdc);
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
 
     }

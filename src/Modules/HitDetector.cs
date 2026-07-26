@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -20,43 +20,55 @@ namespace Horimiya.Modules
         public long LastHitTick = 0;
 
         // Ring buffer for recent hit/miss results (1=hit, 0=miss)
-        private const int RING_SIZE = 30;
+        private const int RING_SIZE = 40;
         private readonly int[] _ring = new int[RING_SIZE];
         private int _ringPos = 0;
         private int _ringCount = 0;
 
         // Pixel sampling state
         private readonly Stopwatch _sw = new Stopwatch();
-        private long _lastSampleTick = 0;
 
         // Baseline pixel snapshot (taken before click)
         private uint[] _baselinePixels;
-        private const int SAMPLE_POINTS = 12;
 
-        // Pre-computed sample offsets relative to screen center
-        // These cover the area where Minecraft hurt particles appear
+        // ── Sample grid ──
+        // 20 points covering a wider radius to catch hurt particles and knockback motion.
+        // Uses screen-absolute coords offset from window center.
+        private const int SAMPLE_POINTS = 20;
         private static readonly Point[] SAMPLE_OFFSETS = new Point[]
         {
-            // Inner ring: close to crosshair where particles spawn
-            new Point(-8, -8),   new Point(8, -8),
-            new Point(-8,  8),   new Point(8,  8),
-            // Mid ring: slightly further out
-            new Point(-20, -15), new Point(20, -15),
-            new Point(-20,  15), new Point(20,  15),
-            // Outer ring: for knockback motion detection
-            new Point(-35, -5),  new Point(35, -5),
-            new Point(0, -30),   new Point(0, 25),
+            // Inner ring: right at crosshair where particles first appear
+            new Point(-6,  -6),  new Point( 6,  -6),
+            new Point(-6,   6),  new Point( 6,   6),
+            // Mid ring: typical particle spawn radius
+            new Point(-22, -18), new Point(22, -18),
+            new Point(-22,  18), new Point(22,  18),
+            new Point( 0,  -24), new Point( 0,   24),
+            new Point(-24,   0), new Point(24,    0),
+            // Outer ring: knockback / entity motion
+            new Point(-44,  -8), new Point(44,  -8),
+            new Point(-44,   8), new Point(44,   8),
+            new Point(-16, -40), new Point(16, -40),
+            new Point(-16,  35), new Point(16,  35),
         };
 
-        // Hurt particle color thresholds
-        // Minecraft hurt particles are bright red: R > 180, G < 80, B < 80
-        private const byte HURT_R_MIN = 160;
-        private const byte HURT_G_MAX = 100;
-        private const byte HURT_B_MAX = 100;
+        // ── Hurt particle thresholds ──
+        // Minecraft hit particles: vivid red (R high, G low, B low).
+        // Tightened to reduce false positives from warm-colored blocks/sky.
+        private const byte HURT_R_MIN    = 185; // strong red channel
+        private const byte HURT_G_MAX    = 75;  // barely any green
+        private const byte HURT_B_MAX    = 75;  // barely any blue
+        private const int  HURT_PIXEL_MIN = 2;  // need >= 2 red pixels to call it a hit
 
-        // Motion detection threshold (pixel color delta)
-        private const int MOTION_THRESHOLD = 40;
-        private const int MOTION_MIN_CHANGED = 4; // At least 4 of 12 points must change
+        // ── Motion thresholds ──
+        // Higher delta avoids triggering on compression artifacts or camera pan.
+        private const int MOTION_THRESHOLD   = 65; // per-channel sum delta
+        private const int MOTION_MIN_CHANGED = 6;  // at least 6/20 points must change
+
+        // ── Debounce ──
+        // Prevent counting the same hit event twice (game flashes for multiple frames).
+        private const long DEBOUNCE_TICKS = 150 * 10000L; // 150ms in 100ns ticks
+        private long _lastHitRecordedTick = 0;
 
         public HitDetector(AppConfig cfg)
         {
@@ -67,37 +79,41 @@ namespace Horimiya.Modules
 
         /// <summary>
         /// Call BEFORE sending the click to capture baseline pixel state.
-        /// This is fast (~0.1ms) since we only sample 12 pixels via GetPixel.
+        /// Uses screen DC so coordinates are absolute — works correctly on
+        /// high-DPI and scaled displays without needing to convert client coords.
         /// </summary>
         public void CaptureBaseline(IntPtr hwnd)
         {
             if (!_cfg.HitDetectionEnabled) return;
             if (hwnd == IntPtr.Zero) return;
 
-            Win32.RECT rect;
-            if (!Win32.GetClientRect(hwnd, out rect)) return;
+            Win32.RECT clientRect;
+            if (!Win32.GetClientRect(hwnd, out clientRect)) return;
 
-            int cx = (rect.right - rect.left) / 2;
-            int cy = (rect.bottom - rect.top) / 2;
+            // Convert window client center to screen coordinates via GetWindowRect
+            Win32.RECT windowRect;
+            if (!Win32.GetWindowRect(hwnd, out windowRect)) return;
 
-            IntPtr hdc = Win32.GetDC(hwnd);
+            // Client area starts at windowRect top-left + non-client frame (borders/title).
+            // The fastest approximation: use the window screen rect center minus half client size.
+            int frameW = ((windowRect.right - windowRect.left) - (clientRect.right - clientRect.left)) / 2;
+            int frameH = (windowRect.bottom - windowRect.top) - (clientRect.bottom - clientRect.top) - frameW;
+
+            int cx = windowRect.left + frameW + (clientRect.right - clientRect.left) / 2;
+            int cy = windowRect.top  + Math.Max(0, frameH) + (clientRect.bottom - clientRect.top) / 2;
+
+            IntPtr hdc = Win32.GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero) return;
 
             try
             {
                 for (int i = 0; i < SAMPLE_POINTS; i++)
-                {
-                    int px = cx + SAMPLE_OFFSETS[i].X;
-                    int py = cy + SAMPLE_OFFSETS[i].Y;
-                    _baselinePixels[i] = Win32.GetPixel(hdc, px, py);
-                }
+                    _baselinePixels[i] = Win32.GetPixel(hdc, cx + SAMPLE_OFFSETS[i].X, cy + SAMPLE_OFFSETS[i].Y);
             }
             finally
             {
-                Win32.ReleaseDC(hwnd, hdc);
+                Win32.ReleaseDC(IntPtr.Zero, hdc);
             }
-
-            _lastSampleTick = _sw.ElapsedTicks;
         }
 
         /// <summary>
@@ -109,23 +125,30 @@ namespace Horimiya.Modules
             if (!_cfg.HitDetectionEnabled) return false;
             if (hwnd == IntPtr.Zero) return false;
 
-            Win32.RECT rect;
-            if (!Win32.GetClientRect(hwnd, out rect)) return false;
+            Win32.RECT clientRect;
+            if (!Win32.GetClientRect(hwnd, out clientRect)) return false;
 
-            int cx = (rect.right - rect.left) / 2;
-            int cy = (rect.bottom - rect.top) / 2;
-            int w = rect.right - rect.left;
-            int h = rect.bottom - rect.top;
+            int w = clientRect.right - clientRect.left;
+            int h = clientRect.bottom - clientRect.top;
             if (w < 100 || h < 100) return false;
 
-            IntPtr hdc = Win32.GetDC(hwnd);
+            Win32.RECT windowRect;
+            if (!Win32.GetWindowRect(hwnd, out windowRect)) return false;
+
+            int frameW = ((windowRect.right - windowRect.left) - w) / 2;
+            int frameH = (windowRect.bottom - windowRect.top) - h - frameW;
+
+            int cx = windowRect.left + frameW + w / 2;
+            int cy = windowRect.top  + Math.Max(0, frameH) + h / 2;
+
+            IntPtr hdc = Win32.GetDC(IntPtr.Zero);
             if (hdc == IntPtr.Zero) return false;
 
             bool hitDetected = false;
 
             try
             {
-                int hurtPixelCount = 0;
+                int hurtPixelCount  = 0;
                 int motionPixelCount = 0;
 
                 for (int i = 0; i < SAMPLE_POINTS; i++)
@@ -133,50 +156,46 @@ namespace Horimiya.Modules
                     int px = cx + SAMPLE_OFFSETS[i].X;
                     int py = cy + SAMPLE_OFFSETS[i].Y;
 
-                    // Clamp to client area
-                    if (px < 0 || py < 0 || px >= w || py >= h) continue;
-
                     uint pixel = Win32.GetPixel(hdc, px, py);
-                    if (pixel == 0xFFFFFFFF) continue; // Invalid
+                    if (pixel == 0xFFFFFFFF) continue;
 
-                    byte r = (byte)(pixel & 0xFF);
-                    byte g = (byte)((pixel >> 8) & 0xFF);
+                    byte r = (byte)( pixel        & 0xFF);
+                    byte g = (byte)((pixel >>  8) & 0xFF);
                     byte b = (byte)((pixel >> 16) & 0xFF);
 
-                    // Check for hurt particle colors (red flash)
+                    // ── Hurt particle: vivid red ──
                     if (r >= HURT_R_MIN && g <= HURT_G_MAX && b <= HURT_B_MAX)
-                    {
                         hurtPixelCount++;
-                    }
 
-                    // Check for motion (significant pixel change from baseline)
+                    // ── Motion vs baseline ──
                     uint baseline = _baselinePixels[i];
                     if (baseline != 0xFFFFFFFF)
                     {
-                        byte br = (byte)(baseline & 0xFF);
-                        byte bg = (byte)((baseline >> 8) & 0xFF);
+                        byte br = (byte)( baseline        & 0xFF);
+                        byte bg = (byte)((baseline >>  8) & 0xFF);
                         byte bb = (byte)((baseline >> 16) & 0xFF);
 
                         int delta = Math.Abs(r - br) + Math.Abs(g - bg) + Math.Abs(b - bb);
                         if (delta > MOTION_THRESHOLD)
-                        {
                             motionPixelCount++;
-                        }
                     }
                 }
 
-                // Hit detected if:
-                // - At least 1 hurt particle pixel found, OR
-                // - Significant motion detected (knockback) in enough sample points
-                hitDetected = (hurtPixelCount >= 1) || (motionPixelCount >= MOTION_MIN_CHANGED);
+                hitDetected = (hurtPixelCount >= HURT_PIXEL_MIN) || (motionPixelCount >= MOTION_MIN_CHANGED);
             }
             finally
             {
-                Win32.ReleaseDC(hwnd, hdc);
+                Win32.ReleaseDC(IntPtr.Zero, hdc);
             }
 
-            // Record result
+            // ── Debounce: skip recording if the same hit event is still active ──
+            long nowTick = DateTime.UtcNow.Ticks;
+            if (hitDetected && (nowTick - _lastHitRecordedTick) < DEBOUNCE_TICKS)
+                return true; // same flash, don't double-count
+
             RecordResult(hitDetected);
+            if (hitDetected) _lastHitRecordedTick = nowTick;
+
             return hitDetected;
         }
 
@@ -192,12 +211,10 @@ namespace Horimiya.Modules
                 TotalMisses++;
             }
 
-            // Update ring buffer
             _ring[_ringPos] = hit ? 1 : 0;
             _ringPos = (_ringPos + 1) % RING_SIZE;
             if (_ringCount < RING_SIZE) _ringCount++;
 
-            // Calculate hit rate from ring buffer (recent N clicks)
             int hits = 0;
             for (int i = 0; i < _ringCount; i++)
                 hits += _ring[i];
@@ -206,32 +223,24 @@ namespace Horimiya.Modules
 
         /// <summary>
         /// Returns a CPS multiplier based on current hit rate.
-        /// When hit rate is high (hitting target), returns 1.0 (full CPS).
-        /// When hit rate is low (missing), returns a reduced multiplier
-        /// to simulate natural human behavior (slower when out of range).
+        /// Above 65% hit rate => full CPS. Below => linear reduction.
         /// </summary>
         public double GetAdaptiveCpsMultiplier()
         {
             if (!_cfg.AdaptiveCpsEnabled) return 1.0;
-            if (_ringCount < 5) return 1.0; // Need at least 5 samples
+            if (_ringCount < 5) return 1.0;
 
-            // HitRate is 0-100
-            // Above 60% hit rate: full CPS
-            // Below 60%: scale down linearly
-            // At 0% hit rate: use AdaptiveCpsMin / AverageCps ratio
-            if (HitRate >= 60.0) return 1.0;
+            const double threshold = 65.0;
+            if (HitRate >= threshold) return 1.0;
 
             double minMultiplier = _cfg.AdaptiveCpsMin / Math.Max(1.0, _cfg.AverageCps);
             minMultiplier = Math.Max(0.3, Math.Min(1.0, minMultiplier));
 
-            // Linear interpolation: at 60% = 1.0, at 0% = minMultiplier
-            double t = HitRate / 60.0;
+            double t = HitRate / threshold;
             return minMultiplier + t * (1.0 - minMultiplier);
         }
 
-        /// <summary>
-        /// Resets all stats. Call when toggling click on/off.
-        /// </summary>
+        /// <summary>Resets all stats. Call when toggling click on/off.</summary>
         public void Reset()
         {
             TotalHits = 0;
@@ -240,6 +249,7 @@ namespace Horimiya.Modules
             _ringCount = 0;
             _ringPos = 0;
             LastHitTick = 0;
+            _lastHitRecordedTick = 0;
         }
     }
 }

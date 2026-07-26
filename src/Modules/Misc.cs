@@ -19,7 +19,6 @@ namespace Horimiya.Modules
         // Discord RPC state
         private Thread _rpcThread;
         private volatile bool _rpcRun = false;
-        private volatile bool _rpcOk = false;
         private readonly DateTime _t0 = DateTime.UtcNow;
 
         // Hotkey polling state
@@ -335,7 +334,6 @@ namespace Horimiya.Modules
         public void StopRpc()
         {
             _rpcRun = false;
-            _rpcOk = false;
             TriggerRpcStatus(false);
         }
 
@@ -348,7 +346,6 @@ namespace Horimiya.Modules
                     using (var pipe = new NamedPipeClientStream(".", "discord-ipc-0", PipeDirection.InOut))
                     {
                         pipe.Connect(3000);
-                        _rpcOk = true;
                         TriggerRpcStatus(true);
 
                         // Handshake
@@ -374,7 +371,6 @@ namespace Horimiya.Modules
                     // Fail silently and retry connection
                 }
 
-                _rpcOk = false;
                 TriggerRpcStatus(false);
                 if (_rpcRun)
                 {

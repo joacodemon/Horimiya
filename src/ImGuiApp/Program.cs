@@ -78,12 +78,8 @@ internal static class Program
 
             container.RegisterSingleton<AppConfig>(cfg);
 
-            // Initialize Modules using DI Container
             var clicker = container.Resolve<Clicker>();
             container.RegisterSingleton<Clicker>(clicker);
-
-            var rightClicker = container.Resolve<RightClicker>();
-            container.RegisterSingleton<RightClicker>(rightClicker);
 
             var recorder = container.Resolve<Recorder>();
             container.RegisterSingleton<Recorder>(recorder);
@@ -97,7 +93,6 @@ internal static class Program
             Win32.NtSetTimerResolution(5000, true, ref currentRes); // 0.5ms resolution via NTDLL
             
             clicker.Start();
-            rightClicker.Start();
             misc.Start();
             Win32.StartMouseHook();
 
@@ -105,43 +100,87 @@ internal static class Program
             AllocConsole();
             IntPtr consoleHwnd = GetConsoleWindow();
             
-            Console.Title = "Horimiya - Authenticating";
+            Console.Title = "Horimiya Client - Premium Build";
             Console.CursorVisible = false;
+            Console.Clear();
             
-            // Render ASCII
+            // Sleek minimalist header
             Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.WriteLine("");
-            Console.WriteLine(@"    _   _            _           _              ");
-            Console.WriteLine(@"   | | | | ___  _ __(_)_ __ ___ (_)_   _  __ _   ");
-            Console.WriteLine(@"   | |_| |/ _ \| '__| | '_ ` _ \| | | | |/ _` |  ");
-            Console.WriteLine(@"   |  _  | (_) | |  | | | | | | | | |_| | (_| |  ");
-            Console.WriteLine(@"   |_| |_|\___/|_|  |_|_| |_| |_|_|\__, |\__,_|  ");
-            Console.WriteLine(@"                                   |___/         ");
-            
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("                                           1.0.1\n\n");
-            
-            Console.WriteLine("Authenticating...");
-            Console.WriteLine("");
-
-            // Check for updates automatically
-            Updater.CheckForUpdates("1.0.1");
-            Console.WriteLine("");
-            
-            int totalBlocks = 30;
-            Console.Write(" ");
-            for (int i = 0; i < totalBlocks; i++)
-            {
-                Console.ForegroundColor = ConsoleColor.Magenta;
-                Console.Write((char)9608); // Solid block
-                Thread.Sleep(50); // Simula el tiempo de carga
-            }
+            Console.WriteLine("\n");
+            Console.WriteLine(@"   _  _         _       _         ");
+            Console.WriteLine(@"  | || |___ _ _(_)_ __ (_)_  _ __ _ ");
+            Console.WriteLine(@"  | __ / _ \ '_| | '  \| | || / _` |");
+            Console.WriteLine(@"  |_||_\___/_| |_|_|_|_|_|\_, \__,_|");
+            Console.WriteLine(@"                          |__/      ");
             Console.WriteLine("\n");
             
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("Successfully authenticated.");
             Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("Starting the UI..._");
+            Console.Write("    [");
+            Console.ForegroundColor = ConsoleColor.DarkMagenta;
+            Console.Write("+");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("] Welcome, ");
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("lospoderosos");
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("    [");
+            Console.ForegroundColor = ConsoleColor.DarkMagenta;
+            Console.Write("+");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("] Plan: ");
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("Lifetime / Developer\n");
+
+            // Background updates check
+            Updater.CheckForUpdates("1.0.1");
+
+            // Fake boot sequence for premium aesthetic
+            string[] bootSequence = new string[]
+            {
+                "Establishing secure connection to server...",
+                "Fetching latest dynamic offsets...",
+                "Resolving kernel hooks...",
+                "Bypassing Ring0 Anticheat...",
+                "Mapping memory regions (Stealth Mode)...",
+                "Cleaning execution traces..."
+            };
+
+            var rand = new Random();
+            foreach (var step in bootSequence)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write("    [~] ");
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.Write(step.PadRight(45));
+                Thread.Sleep(rand.Next(150, 400));
+                
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("OK");
+                Thread.Sleep(rand.Next(50, 150));
+            }
+            
+            Console.WriteLine();
+            
+            // Loading Bar
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("    Injecting [");
+            int totalBlocks = 35;
+            for (int i = 0; i < totalBlocks; i++)
+            {
+                Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                Console.Write("=");
+                Thread.Sleep(rand.Next(10, 35)); 
+                if (i == 10 || i == 25) Thread.Sleep(200); // Simulate hurdles
+            }
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("] 100%\n");
+            
+            Console.ForegroundColor = ConsoleColor.DarkMagenta;
+            Console.Write("    > ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("Initialization complete. Launching interface...");
+            
             Thread.Sleep(1000);
             
             FreeConsole();

@@ -23,7 +23,6 @@ public class ImGuiForm : Form
     
     private AppConfig _cfg;
     private Clicker _clicker;
-    private RightClicker _rightClicker;
     private Recorder _recorder;
     private Misc _misc;
 
@@ -39,14 +38,10 @@ public class ImGuiForm : Form
     private int _texGear   = 0;
     private int _texBg     = 0;
     private int _texEaster = 0;
-    private bool _showBg   = true;
-
-    private string _recMacroName = "macro1";
     private string _presetAddName = "server name";
     private string _presetAddServer = "";
     private long _lastAutoSwitchTick = 0;
     private string _lastMatchedPreset = null;
-    private float _presetAddCps = 15.0f;
 
     // ── In-app switch toast ──
     private string _toastServer = "";
@@ -55,7 +50,6 @@ public class ImGuiForm : Form
     private long   _toastShowMs = 0;     // Environment.TickCount when shown
     private const int TOAST_LIFE_MS  = 3500;
     private const int TOAST_FADE_MS  = 600;
-    private int _presetAddRand = 2;
     private string _recorderStatus = "Status: Idle | Events: 0";
 
     private Stopwatch _frameSw = Stopwatch.StartNew();
@@ -68,11 +62,10 @@ public class ImGuiForm : Form
     
     private Horimiya.IoT.IoTManager _iot;
 
-    public ImGuiForm(AppConfig cfg, Clicker clicker, RightClicker rightClicker, Recorder recorder, Misc misc)
+    public ImGuiForm(AppConfig cfg, Clicker clicker, Recorder recorder, Misc misc)
     {
         _cfg = cfg;
         _clicker = clicker;
-        _rightClicker = rightClicker;
         _recorder = recorder;
         _misc = misc;
 
@@ -85,9 +78,6 @@ public class ImGuiForm : Form
         FormBorderStyle = FormBorderStyle.None;  // Borderless — custom title bar in ImGui
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        
-        // Allow window to be dragged via the top bar area (P/Invoke WM_NCLBUTTONDOWN)
-        _glControl_MouseDown_Drag = true;
 
         _glControl = new OpenTK.GLControl(new OpenTK.Graphics.GraphicsMode(32, 24, 0, 4));
         _glControl.Dock = DockStyle.Fill;
@@ -103,7 +93,7 @@ public class ImGuiForm : Form
         };
         _misc.RightClickBindTriggered += () =>
         { 
-            _rightClicker.Clicking = !_rightClicker.Clicking; 
+            _clicker.RightClicking = !_clicker.RightClicking; 
         };
         _misc.HideBindTriggered += () => { 
             if (Visible && WindowState != FormWindowState.Minimized) 
@@ -128,7 +118,6 @@ public class ImGuiForm : Form
     }
     
     // ── Borderless drag support ──
-    private bool _glControl_MouseDown_Drag = false;
     private bool _isDragging = false;
     private Point _dragStart;
     
@@ -315,8 +304,6 @@ public class ImGuiForm : Form
         s.WindowBorderSize= 0f;
         s.ChildBorderSize = 1f;
 
-        _showBg = false;
-        
         // Note: Fonts are loaded in ImGuiController constructor (segoeui.ttf or default)
     }
 
@@ -964,10 +951,10 @@ public class ImGuiForm : Form
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(15, 12));
         ImGui.BeginChild("##RMBLeft", new Vector2(leftW, cardH), true);
 
-        bool clicking = _rightClicker.Clicking;
+        bool clicking = _clicker.RightClicking;
         ImGui.PushStyleColor(ImGuiCol.CheckMark, _colAccent);
         if (ImGui.Checkbox("##ToggleRMB", ref clicking)) {
-            _rightClicker.Clicking = clicking;
+            _clicker.RightClicking = clicking;
         }
         ImGui.PopStyleColor();
         ImGui.SameLine();
@@ -1074,20 +1061,20 @@ public class ImGuiForm : Form
 
         ImGui.TextColored(_colTextDim, "Live CPS");
         ImGui.SetWindowFontScale(2.2f);
-        ImGui.TextColored(_colText, $"{_rightClicker.StatLiveCps:F1}");
+        ImGui.TextColored(_colText, $"{_clicker.StatLiveCps:F1}");
         ImGui.SetWindowFontScale(1.0f);
 
         ImGui.Dummy(new Vector2(0, 8));
 
-        DrawBar($"Avg: {_rightClicker.StatAvgCps:F1}", (float)(_rightClicker.StatAvgCps / Math.Max(_cfg.RightAverageCps * 1.5, 1)), "", rightW - 30);
+        DrawBar($"Avg: {_clicker.StatAvgCps:F1}", (float)(_clicker.StatAvgCps / Math.Max(_cfg.RightAverageCps * 1.5, 1)), "", rightW - 30);
 
         ImGui.Dummy(new Vector2(0, 5));
 
-        DrawBar($"Jitter: {_rightClicker.StatJitter:F1}", (float)(_rightClicker.StatJitter / 5.0), "", rightW - 30);
+        DrawBar($"Jitter: {_clicker.StatJitter:F1}", (float)(_clicker.StatJitter / 5.0), "", rightW - 30);
 
         ImGui.Dummy(new Vector2(0, 12));
 
-        bool isStable = _rightClicker.StatJitter < 2.0;
+        bool isStable = _clicker.StatJitter < 2.0;
         Vector4 stbCol = isStable ? new Vector4(0.1f, 0.7f, 0.3f, 1f) : new Vector4(0.8f, 0.2f, 0.2f, 1f);
         ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(stbCol.X, stbCol.Y, stbCol.Z, 0.15f));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(stbCol.X, stbCol.Y, stbCol.Z, 0.25f));
@@ -1433,7 +1420,6 @@ public class ImGuiForm : Form
         _cfg.Save();
         _bindTimer.Stop();
         _clicker.Stop();
-        _rightClicker.Stop();
         _recorder.Stop();
         _misc.Stop();
         _iot.Dispose();

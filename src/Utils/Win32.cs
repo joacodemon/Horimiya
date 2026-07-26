@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Drawing;
@@ -54,6 +54,9 @@ namespace Horimiya.Utils
         public struct POINT { public int X, Y; }
 
         // ── Window Management ────────────────────────────────────────────────
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
@@ -223,6 +226,9 @@ namespace Horimiya.Utils
 
         [DllImport("user32.dll")]
         public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         // ── Graphics / DC (for Pixel Color checks) ───────────────────────────
         [DllImport("user32.dll")]

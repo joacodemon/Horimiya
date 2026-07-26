@@ -1,0 +1,19 @@
+MSBuild version 17.3.4+a400405ba for .NET
+  Determinando los proyectos que se van a restaurar...
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de ImGui.NET (>= 1.89.7), pero no se encontr¢ ImGui.NET 1.89.7. Se resolvi¢ una mejor coincidencia aproximada de ImGui.NET 1.89.7.1.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de MQTTnet (>= 4.2.0), pero no se encontr¢ MQTTnet 4.2.0. Se resolvi¢ una mejor coincidencia aproximada de MQTTnet 4.2.0.706.
+  Todos los proyectos est n actualizados para la restauraci¢n.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de ImGui.NET (>= 1.89.7), pero no se encontr¢ ImGui.NET 1.89.7. Se resolvi¢ una mejor coincidencia aproximada de ImGui.NET 1.89.7.1.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de MQTTnet (>= 4.2.0), pero no se encontr¢ MQTTnet 4.2.0. Se resolvi¢ una mejor coincidencia aproximada de MQTTnet 4.2.0.706.
+  ImGuiApp -> C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\bin\Release\net48\Horimiya.exe
+
+Compilaci¢n correcta.
+
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de ImGui.NET (>= 1.89.7), pero no se encontr¢ ImGui.NET 1.89.7. Se resolvi¢ una mejor coincidencia aproximada de ImGui.NET 1.89.7.1.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de MQTTnet (>= 4.2.0), pero no se encontr¢ MQTTnet 4.2.0. Se resolvi¢ una mejor coincidencia aproximada de MQTTnet 4.2.0.706.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de ImGui.NET (>= 1.89.7), pero no se encontr¢ ImGui.NET 1.89.7. Se resolvi¢ una mejor coincidencia aproximada de ImGui.NET 1.89.7.1.
+C:\Users\juaqu\Downloads\Horimiya\src\ImGuiApp\ImGuiApp.csproj : warning NU1603: Horimiya depende de MQTTnet (>= 4.2.0), pero no se encontr¢ MQTTnet 4.2.0. Se resolvi¢ una mejor coincidencia aproximada de MQTTnet 4.2.0.706.
+    4 Advertencia(s)
+    0 Errores
+
+Tiempo transcurrido 00:00:00.95

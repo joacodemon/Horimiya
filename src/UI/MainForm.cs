@@ -55,14 +55,13 @@ namespace Horimiya.UI
         System.Windows.Forms.Timer _bindTimer;
 
         // UI refs for sync
-        FlatCheck  _chkTgl, _chkOig, _chkRmb, _chkWim, _chkRefill, _chkTglRight;
-        FlatCheck  _chkRpc, _chkParticle;
+        FlatCheck  _chkTgl, _chkOig, _chkRmb, _chkWim, _chkTglRight;
+        FlatCheck  _chkParticle;
         FlatSlider _sldrCps, _sldrPing, _sldrCpsRight;
         FlatDrop   _dRand, _dRandRight;
-        FlatDrop   _dMode, _dBB, _dSnd, _dModeRight;
+        FlatDrop   _dMode, _dModeRight;
         Button     _btnBind, _btnHide, _btnColor, _btnDestructBind;
-        Label      _lblRpc, _lblRecSt;
-        FlatTextBox _txAppId;
+        Label      _lblRecSt;
         ParticleOverlayForm _particleOverlay;
 
         // Randomization UI references for dynamic show/hide
@@ -83,12 +82,6 @@ namespace Horimiya.UI
         private int _animTargetX;
         private int _animDirection;
         private bool _isAnimating = false;
-
-        // Drag flag for custom chart interaction
-        private bool _isDragging = false;
-        // References to custom randomization UI
-        private Panel _customPanel;
-        private Label _customStats;
 
         System.Drawing.Drawing2D.GraphicsPath RoundedRect(int x, int y, int w, int h, int r)
         {
@@ -130,7 +123,6 @@ namespace Horimiya.UI
             Build();
 
             _recorder.StatusChanged    += s => SafeSet(_lblRecSt, s);
-            _misc.RpcStatusChanged     += ok => SafeInvoke(() => { if (_lblRpc != null) { _lblRpc.Text = ok ? "Discord RPC: Connected" : "Discord RPC: Disconnected"; _lblRpc.ForeColor = ok ? GRN : DIM; } });
             _misc.ClickBindTriggered   += () => SafeInvoke(() => { _chkTgl.Checked = !_chkTgl.Checked; _clicker.Clicking = _chkTgl.Checked; _chkTgl.Invalidate(); });
             _misc.HideBindTriggered    += () => SafeInvoke(() => { if (Visible) Hide(); else { Show(); BringToFront(); } });
             _misc.DestructBindTriggered += () => SafeInvoke(() => { this.Close(); });
@@ -1539,13 +1531,9 @@ namespace Horimiya.UI
             if (_chkOig  != null) { _chkOig.Checked  = _cfg.OnlyInGame;  _chkOig.Invalidate(); }
             if (_chkRmb  != null) { _chkRmb.Checked  = _cfg.RmbLock;     _chkRmb.Invalidate(); }
             if (_chkWim  != null) { _chkWim.Checked  = _cfg.WorkInMenus; _chkWim.Invalidate(); }
-            if (_chkRefill != null) { _chkRefill.Checked = _cfg.RefillMode; _chkRefill.Invalidate(); }
-            if (_chkRpc  != null) { _chkRpc.Checked  = _cfg.DiscordRpc;  _chkRpc.Invalidate(); }
 
             if (_chkParticle != null) { _chkParticle.Checked = _cfg.ParticleEnabled; _chkParticle.Invalidate(); }
-            if (_txAppId != null) { _txAppId.Text    = _cfg.DiscordAppId; }
             if (_dMode   != null) _dMode.SelectedIndex = _cfg.Mode;
-            if (_dBB     != null) _dBB.SelectedIndex   = _cfg.BBMode;
             if (_dRand != null) _dRand.SelectedIndex = _cfg.RandMode;
             if (_btnColor != null) ApplyAccentToAll(Color.FromArgb(_cfg.ColorAccent));
             if (_btnBind != null) _btnBind.Text = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
