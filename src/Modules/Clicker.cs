@@ -25,6 +25,9 @@ namespace Horimiya.Modules
         private readonly AppConfig _cfg;
 
         private readonly Random _rng = new Random();
+        // Dedicated RNG for RightClickLoop — System.Random is NOT thread-safe.
+        // Using a single _rng from two threads simultaneously corrupts its state.
+        private readonly Random _rightRng = new Random(Environment.TickCount ^ 0x5A5A5A5A);
         private bool _lastInvResult = false;
         private Stopwatch _invCheckTimer = new Stopwatch();
         private Thread _thread;
@@ -34,40 +37,8 @@ namespace Horimiya.Modules
         private const double REFILL_CPS_MIN = 25.0;
         private const double REFILL_CPS_MAX = 38.0;
 
-        // ── Pacer State ──
-        private long m_counter = 0;
-        private double m_jitterValue = 0.0;
-        private double m_jitterTarget = 0.0;
-        private int m_jitterStep = 0;
-        private int m_jitterSteps = 12;
-        private double m_lastIntervalMs = 0.0;
-        private double m_lastDownMs = 0.0;
-        private double m_intervalEma = 0.0;
-        private double m_downEma = 0.0;
-
         private double NextUniform(double minV, double maxV) { return minV + _rng.NextDouble() * (maxV - minV); }
-        private double NextTriangular(double minV, double maxV) { 
-            double u1 = NextUniform(0.0, 1.0); 
-            double u2 = NextUniform(0.0, 1.0); 
-            return minV + (maxV - minV) * (0.5 * (u1 + u2)); 
-        }
-        private double NextSmoothedJitter() {
-            if (m_jitterStep >= m_jitterSteps) {
-                m_jitterTarget = NextUniform(-1.0, 1.0);
-                m_jitterSteps = (int)NextUniform(14.0, 26.0); // más pasos = transición más larga y suave
-                m_jitterStep = 0;
-            }
-            m_jitterValue += (m_jitterTarget - m_jitterValue) * 0.10; // más lento = más smooth
-            m_jitterStep++;
-            return m_jitterValue;
-        }
-        private double ClampChange(double value, double lastValue, double maxDelta) {
-            if (lastValue <= 0.0) return value;
-            double delta = value - lastValue;
-            if (delta > maxDelta) return lastValue + maxDelta;
-            if (delta < -maxDelta) return lastValue - maxDelta;
-            return value;
-        }
+
 
         // ── Performance cache fields ──
         // Cache Minecraft focus check to avoid StringBuilder alloc + GetWindowText every tick
@@ -84,6 +55,16 @@ namespace Horimiya.Modules
 
         // Reusable StringBuilder for window title checks (avoids GC pressure)
         private readonly StringBuilder _titleBuffer = new StringBuilder(256);
+
+        // Process name cache: avoids expensive Process.GetProcessById on every focus check
+        private readonly System.Collections.Generic.Dictionary<uint, string> _processNameCache
+            = new System.Collections.Generic.Dictionary<uint, string>();
+
+        // Cache LoadCursor handles — these are system constants, never change.
+        // LoadCursor is a P/Invoke; calling it 3x per cursor check (every 50ms) is wasteful.
+        private static readonly IntPtr _hCursorArrow = Win32.LoadCursor(IntPtr.Zero, 32512); // IDC_ARROW
+        private static readonly IntPtr _hCursorIBeam = Win32.LoadCursor(IntPtr.Zero, 32513); // IDC_IBEAM
+        private static readonly IntPtr _hCursorHand  = Win32.LoadCursor(IntPtr.Zero, 32649); // IDC_HAND
 
         public volatile bool Clicking = false;
         public volatile bool RightClicking = false;
@@ -102,9 +83,6 @@ namespace Horimiya.Modules
         public int StatTotalMisses = 0;
         private long _lastClickFinishTick = 0;
 
-        // Hit detection: async check scheduling
-        private volatile IntPtr _hitCheckHwnd = IntPtr.Zero;
-        
         // Right clicker thread
         private Thread _rightThread;
 
@@ -113,24 +91,19 @@ namespace Horimiya.Modules
             _cfg = cfg;
         }
 
-        // Call this when switching profiles so EMA/jitter state doesn't bleed across presets.
+        // ── Pacer State ──
+        private long m_counter = 0;
+        private double m_lastIntervalMs = 0.0;
+        private double m_lastDownMs = 0.0;
+
+        // Call this when switching profiles so timing state doesn't bleed across presets.
         public void ResetTimingState()
         {
-            m_counter       = 0;
-            m_jitterValue   = 0.0;
-            m_jitterTarget  = 0.0;
-            m_jitterStep    = 0;
-            m_intervalEma   = 0.0;
-            m_downEma       = 0.0;
-            m_lastIntervalMs= 0.0;
-            m_lastDownMs    = 0.0;
+            m_counter        = 0;
+            m_lastIntervalMs = 0.0;
+            m_lastDownMs     = 0.0;
         }
 
-        // Obsolete, left for compatibility if needed.
-        private double GetCurrentCps()
-        {
-            return _cfg.AverageCps;
-        }
 
         public void Start()
         {
@@ -189,7 +162,6 @@ namespace Horimiya.Modules
             {
                 bool isPhysicalDown = Win32.IsLeftDown;
 
-
                 // Si Clicking esta OFF, dormir
                 if (!Clicking)
                 {
@@ -241,29 +213,24 @@ namespace Horimiya.Modules
                     }
                 }
 
-                // Reset scheduler if we're re-entering active clicking after an idle period
-                // This prevents the tick accumulation from causing a CPS burst.
+                // Reset scheduler on re-entry to prevent CPS burst from accumulated ticks.
                 if (!_wasActiveLastTick)
                 {
                     nextClickTick = sw.ElapsedTicks;
                     _wasActiveLastTick = true;
                 }
 
-                // ── RMB-Lock ──
-                // Keep the main left-click loop alive during blockhit-like situations.
-                // The old logic paused the whole clicker whenever RMB was held, which broke attacks.
-                bool blockHitSuppressed = _cfg.RmbLock && Win32.IsRightDown;
-
-                // ── Menu / Inventory restriction ──
+                // ── Menu / Inventory restriction (Smart-Pause) ──
+                // CachedIsCursorVisible() already calls GetCursorInfo internally (cached 50ms).
                 bool cursorShown = CachedIsCursorVisible();
                 if (cursorShown && !_cfg.WorkInMenus)
                 {
-                    if (!CachedIsInventoryLikeScreen(foregroundWnd))
-                    {
-                        if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
-                        Thread.Sleep(10);
-                        continue;
-                    }
+                    // Pause in all menus/chat/escape screens when WorkInMenus is off.
+                    // cursorShown is only true when a standard Windows cursor (Arrow/IBeam/Hand) is detected,
+                    // which reliably identifies menu, chat, and escape screens.
+                    if (globalHoldActive) { Win32.SendLeftUpNative(); globalHoldActive = false; }
+                    Thread.Sleep(10);
+                    continue;
                 }
 
                 // Refill check - Smart Refill Mode
@@ -294,34 +261,6 @@ namespace Horimiya.Modules
                     }
                 }
 
-                // ── Advanced Pacer Randomization ──
-                double targetCps = GetCurrentCps();
-
-                if (_cfg.BurstEnabled && shouldClick && isPhysicalDown)
-                {
-                    if (!inBurst && burstTimer.ElapsedMilliseconds >= nextBurstTime)
-                    {
-                        inBurst = true;
-                        burstEndTime = burstTimer.ElapsedMilliseconds + _cfg.BurstDurationMs;
-                    }
-                    else if (inBurst && burstTimer.ElapsedMilliseconds >= burstEndTime)
-                    {
-                        inBurst = false;
-                        nextBurstTime = burstTimer.ElapsedMilliseconds + _cfg.BurstIntervalMin * 1000.0 + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
-                    }
-
-                    if (inBurst)
-                    {
-                        targetCps = Math.Min(30.0, targetCps + 6.0 + _rng.NextDouble() * 5.0);
-                    }
-                }
-                else if (!isPhysicalDown)
-                {
-                    burstTimer.Restart();
-                    inBurst = false;
-                    nextBurstTime = _cfg.BurstIntervalMin * 1000.0 + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
-                }
-
                 bool isButterfly = false;
                 double delayMs;
                 double downMs = 2.0;
@@ -342,93 +281,138 @@ namespace Horimiya.Modules
                     if (cpsMax < cpsMin) cpsMax = cpsMin;
                     if (cpsMax > 30.0) cpsMax = 30.0;
                     
+                    // ── Burst Mode state update ──
+                    if (_cfg.BurstEnabled && shouldClick && isPhysicalDown)
+                    {
+                        if (!inBurst && burstTimer.ElapsedMilliseconds >= nextBurstTime)
+                        {
+                            inBurst = true;
+                            burstEndTime = burstTimer.ElapsedMilliseconds + _cfg.BurstDurationMs;
+                        }
+                        else if (inBurst && burstTimer.ElapsedMilliseconds >= burstEndTime)
+                        {
+                            inBurst = false;
+                            nextBurstTime = burstTimer.ElapsedMilliseconds + _cfg.BurstIntervalMin * 1000.0
+                                + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
+                        }
+                    }
+                    else if (_cfg.BurstEnabled && !isPhysicalDown)
+                    {
+                        burstTimer.Restart();
+                        inBurst = false;
+                        nextBurstTime = _cfg.BurstIntervalMin * 1000.0
+                            + _rng.NextDouble() * Math.Max(0, (_cfg.BurstIntervalMax - _cfg.BurstIntervalMin)) * 1000.0;
+                    }
+
                     if (_cfg.BurstEnabled && inBurst)
                     {
                         cpsMin = Math.Min(30.0, cpsMin + 6.0);
                         cpsMax = Math.Min(30.0, cpsMax + 6.0);
                     }
 
-                    double cps = NextTriangular(cpsMin, cpsMax);
+
+                    double cps = NextUniform(cpsMin, cpsMax);
                     double interval = 1000.0 / cps;
 
-                    double ping = Math.Max(20.0, Math.Min(200.0, pingMs));
-                    double pingT = (ping - 20.0) / 180.0;
-
-                    double baseRatio = 0.42;
-                    double jitterAmplitude = 0.38;
-                    double maxIntervalDelta = 0.28;
-                    double intervalSmoothing = 0.12;
-                    double downSmoothing = 0.18;
-
-                    if (_cfg.RandMode == 0) // Jitter / Smooth
+                    if (_cfg.RandMode == 0) // Jitter — legit, human feel
                     {
-                        baseRatio = 0.46;
-                        jitterAmplitude = 0.18;
-                        maxIntervalDelta = 0.16;
-                        intervalSmoothing = 0.12;
-                        downSmoothing = 0.16;
+                        // Wider gaussian noise (±4ms) — more natural rhythm variation than Blatant/Butterfly.
+                        double u1 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double u2 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+                        gauss = Math.Max(-4.0, Math.Min(4.0, gauss * 2.0));
 
-                        // Organic drift only in Jitter mode
-                        double drift = Math.Sin(m_counter * 0.018) * 0.055;
-                        interval += drift;
+                        interval += gauss;
+
+                        // Natural micro-hesitations: ~6% of clicks drop to 9–13 CPS
+                        // (77–111ms interval) — simulates losing the rhythm, the biggest legit signal.
+                        if (_rng.NextDouble() < 0.06)
+                        {
+                            double hesitationCps = 9.0 + _rng.NextDouble() * 4.0; // 9–13 CPS
+                            interval = 1000.0 / hesitationCps;
+                        }
+
+                        if (interval < 45.0) interval = 45.0 + (_rng.NextDouble() * 1.5);
+
+                        // Down time: 30% with ±3ms variation
+                        downMs = Math.Max(4.0, interval * 0.30 + (_rng.NextDouble() - 0.5) * 6.0);
+                        if (downMs > interval - 0.5) downMs = interval - 0.5;
+
+                        m_lastIntervalMs = interval;
+                        m_lastDownMs = downMs;
+                        m_counter++;
+                        delayMs = interval;
+                        goto skipCommonPacing;
                     }
-                    else if (_cfg.RandMode == 2) // NoDelay / Competitive
+                    else if (_cfg.RandMode == 2) // NoDelay (MMC Safe)
                     {
-                        baseRatio = 0.18;
-                        jitterAmplitude = 0.06;
-                        maxIntervalDelta = 0.35;
-                        intervalSmoothing = 0.55;
-                        downSmoothing = 0.50;
+                        // NoDelay bypasses the EMA entirely — the whole point is to be
+                        // extremely fast and consistent, like a hardware mouse switch.
+                        // Going through the EMA erases any difference from other modes.
+                        double u1 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double u2 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+                        // ±0.8ms of gaussian jitter — tight and fast, barely perceptible
+                        gauss = Math.Max(-0.8, Math.Min(0.8, gauss * 0.5));
+                        interval = (1000.0 / cps) + gauss;
+                        interval = Math.Max(3.0, interval);
 
-                        double u1 = 1.0 - _rng.NextDouble();
-                        double u2 = 1.0 - _rng.NextDouble();
-                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
-                        double breath = Math.Sin(m_counter * 0.09) * 1.1;
-                        interval += gauss * 1.4 + breath;
-                        if (_rng.NextDouble() < 0.04) interval += _rng.NextDouble() * 4.5;
+                        // Very short down time — simulates fast physical switch release (~1-2ms)
+                        downMs = 1.5 + _rng.NextDouble() * 1.0;
+
+                        m_lastIntervalMs = interval;
+                        m_lastDownMs = downMs;
+                        m_counter++;
+                        delayMs = interval;
+                        goto skipCommonPacing;
                     }
-                    else if (_cfg.RandMode == 1) // Butterfly
+                    else if (_cfg.RandMode == 1) // Butterfly — tighter than Jitter, looser than Blatant
                     {
-                        isButterfly = true;
-                        interval *= 2.0;
+                        // Single-click mode with consistent timing — sits between Jitter and Blatant.
+                        // ±1ms gaussian noise: predictable enough to feel mechanical, loose enough to avoid flags.
+                        double u1 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double u2 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
+                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+                        gauss = Math.Max(-1.0, Math.Min(1.0, gauss * 0.7));
+
+                        interval += gauss;
+                        if (interval < 45.0) interval = 45.0 + (_rng.NextDouble() * 0.8);
+
+                        // Consistent down time: 28% ±1ms
+                        downMs = Math.Max(4.0, interval * 0.28 + (_rng.NextDouble() - 0.5) * 2.0);
+                        if (downMs > interval - 0.5) downMs = interval - 0.5;
+
+                        m_lastIntervalMs = interval;
+                        m_lastDownMs = downMs;
+                        m_counter++;
+                        delayMs = interval;
+                        goto skipCommonPacing;
                     }
+                    else if (_cfg.RandMode == 3) // Blatant — fully mechanical, max CPS, minimal noise
+                    {
+                        // Always runs at cpsMax — no range variation, maximum aggressiveness.
+                        // ±0.1ms noise only — just enough to not be a perfect square wave.
+                        interval = 1000.0 / cpsMax;
+                        interval += (_rng.NextDouble() * 0.2 - 0.1);
+                        interval = Math.Max(3.0, interval);
 
-                    baseRatio += pingT * 0.03;
-                    jitterAmplitude *= (1.0 - 0.55 * pingT);
+                        // Fixed down time: always 28%, no noise — robotic by design
+                        downMs = interval * 0.28;
 
-                    if (m_intervalEma <= 0.0) m_intervalEma = interval;
-                    else m_intervalEma = m_intervalEma * (1.0 - intervalSmoothing) + interval * intervalSmoothing;
-
-                    interval = m_intervalEma;
-                    interval = ClampChange(interval, m_lastIntervalMs, maxIntervalDelta);
-
-                    double down = interval * baseRatio;
-                    double jitter = NextSmoothedJitter() * jitterAmplitude;
-                    down += jitter;
-
-                    double minDown = Math.Max(6.5, interval * 0.38);
-                    double maxDown = interval - 0.6;
-                    if (maxDown < minDown) maxDown = minDown + 0.2;
-                    down = Math.Max(minDown, Math.Min(maxDown, down));
-
-                    if (m_downEma <= 0.0) m_downEma = down;
-                    else m_downEma = m_downEma * (1.0 - downSmoothing) + down * downSmoothing;
-
-                    down = ClampChange(m_downEma, m_lastDownMs, 0.20);
-
-                    double gap = interval - down;
-                    if (gap < 0.4) {
-                        gap = 0.4;
-                        down = interval - gap;
+                        m_lastIntervalMs = interval;
+                        m_lastDownMs = downMs;
+                        m_counter++;
+                        delayMs = interval;
+                        goto skipCommonPacing;
                     }
-
-                    m_lastIntervalMs = interval;
-                    m_lastDownMs = down;
-                    m_counter++;
-
-                    delayMs = interval;
-                    downMs = down;
+                    else
+                    {
+                        // Fallback for any unknown RandMode — behaves like Jitter
+                        delayMs = interval;
+                        downMs = Math.Max(4.0, interval * 0.30);
+                    }
                 }
+                skipCommonPacing:
 
                 // ── Ping-Aware Timing / Latency Compensation ──
                 if (pingMs > 0)
@@ -462,18 +446,7 @@ namespace Horimiya.Modules
                     nextClickTick = currentTick;
 
                 // ── Ejecutar el click ──
-                if (isButterfly)
-                {
-                    // Butterfly: doble-click tradicional (UP+DOWN rapido)
-                    int microGap = _rng.Next(4, 13);
-                    PerformClick(cursorShown, isRefilling, foregroundWnd);
-                    ApplyMouseJitter();
-                    Thread.Sleep(microGap);
-                    PerformClick(cursorShown, isRefilling, foregroundWnd);
-                    ApplyMouseJitter();
-                    nextClickTick -= (long)(microGap * Stopwatch.Frequency / 1000.0);
-                }
-                else if (cursorShown || isRefilling)
+                if (cursorShown || isRefilling)
                 {
                     // Inventory / Refill click
                     PerformClick(cursorShown, isRefilling, foregroundWnd);
@@ -506,15 +479,20 @@ namespace Horimiya.Modules
                     {
                         ApplyMouseJitter();
     
-                    // WTap / STap / ShiftTap (Velocity Simulation)
+                    // WTap / STap / ShiftTap / MicroStrafing (Velocity Simulation)
+                    // IMPORTANT: _rng is NOT thread-safe. ALL random values MUST be pre-captured
+                    // on this thread before passing to the ThreadPool lambda. Calling _rng inside
+                    // the lambda from a pool thread while ClickLoop uses _rng simultaneously
+                    // corrupts Random's internal state (returns 0.0 forever → CPS collapses).
                     if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                     {
                         if (_rng.NextDouble() < 0.45)
                         {
+                            int wtapSleep = _rng.Next(10, 30); // pre-capture!
                             Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0);
                             ThreadPool.QueueUserWorkItem(_ =>
                             {
-                                Thread.Sleep(_rng.Next(10, 30));
+                                Thread.Sleep(wtapSleep);
                                 Win32.keybd_event(0x57, 0, 0, 0);
                             });
                         }
@@ -523,10 +501,11 @@ namespace Horimiya.Modules
                     {
                         if (_rng.NextDouble() < 0.45)
                         {
+                            int stapSleep = _rng.Next(10, 30); // pre-capture!
                             ThreadPool.QueueUserWorkItem(_ =>
                             {
                                 Win32.keybd_event(0x53, 0, 0, 0);
-                                Thread.Sleep(_rng.Next(10, 30));
+                                Thread.Sleep(stapSleep);
                                 Win32.keybd_event(0x53, 0, Win32.KEYEVENTF_KEYUP, 0);
                             });
                         }
@@ -535,37 +514,42 @@ namespace Horimiya.Modules
                     {
                         if (_rng.NextDouble() < 0.45)
                         {
+                            int shiftSleep = _rng.Next(10, 30); // pre-capture!
                             ThreadPool.QueueUserWorkItem(_ =>
                             {
                                 Win32.keybd_event(0x10, 0, 0, 0);
-                                Thread.Sleep(_rng.Next(10, 30));
+                                Thread.Sleep(shiftSleep);
                                 Win32.keybd_event(0x10, 0, Win32.KEYEVENTF_KEYUP, 0);
                             });
                         }
                     }
-                    if (_cfg.MicroStrafing && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Only if pressing W
+                    if (_cfg.MicroStrafing && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                     {
                         if (_rng.NextDouble() < 0.35)
                         {
+                            // Pre-capture ALL random values before the lambda!
+                            byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44;
+                            int strafeSleep = _rng.Next(15, 40);
                             ThreadPool.QueueUserWorkItem(_ =>
                             {
-                                byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44; // A or D
                                 Win32.keybd_event(strafeKey, 0, 0, 0);
-                                Thread.Sleep(_rng.Next(15, 40));
+                                Thread.Sleep(strafeSleep);
                                 Win32.keybd_event(strafeKey, 0, Win32.KEYEVENTF_KEYUP, 0);
                             });
                         }
                     }
 
-                    // Hold time: use downMs + small ping compensation (max ~2.5ms at 50ms ping)
-                    int holdTime = Math.Max(1, (int)downMs);
-                    if (pingMs > 0)
-                        holdTime += (int)Math.Ceiling(pingMs * 0.05);
-                    long holdTicks = (long)(holdTime * Stopwatch.Frequency / 1000.0);
+                    // Hold time: hybrid Sleep(1)+SpinWait — reduces CPU burn vs pure SpinWait.
+                    // At 17 CPS with ~17ms hold, pure SpinWait burned ~29% of one core.
+                    // Now: Sleep(1) covers most of the hold, SpinWait only for the last 2ms.
+                    long holdTicks = (long)(Math.Max(1.0, downMs) * Stopwatch.Frequency / 1000.0);
                     long startTicks = Stopwatch.GetTimestamp();
                     while (Stopwatch.GetTimestamp() - startTicks < holdTicks)
                     {
-                        Thread.Sleep(0);
+                        long holdLeft = holdTicks - (Stopwatch.GetTimestamp() - startTicks);
+                        double holdLeftMs = (double)holdLeft / Stopwatch.Frequency * 1000.0;
+                        if (holdLeftMs > 2.0) Thread.Sleep(1);
+                        else Thread.SpinWait(10);
                     }
 
                         // Recalcular posición del cursor para el UP.
@@ -578,39 +562,29 @@ namespace Horimiya.Modules
                         // Double Click Chance
                         if (_cfg.DoubleClickChance > 0 && _rng.NextDouble() * 100.0 < _cfg.DoubleClickChance)
                         {
-                            Thread.Sleep(_rng.Next(2, 6)); // 2-5ms gap
+                            // A physical double click bounce happens extremely fast, but the hardware switch
+                            // still requires a realistic "down" duration to be read by the anticheat.
+                            Thread.Sleep(_rng.Next(1, 4)); // micro-gap between first UP and second DOWN
+                            
+                            int bounceHoldMs = _rng.Next(6, 14); // Realistic bounce hold time
+                            long bounceTicks = (long)(bounceHoldMs * Stopwatch.Frequency / 1000.0);
+                            
                             if (_isCheatbreaker)
                             {
                                 Win32.SendLeftDown();
-                                Thread.Sleep(_rng.Next(1, 3));
+                                long bStart = Stopwatch.GetTimestamp();
+                                while (Stopwatch.GetTimestamp() - bStart < bounceTicks) { Thread.SpinWait(10); }
                                 Win32.SendLeftUp();
                             }
                             else
                             {
                                 IntPtr dcLParam = Win32.PostLeftDown(foregroundWnd);
-                                Thread.Sleep(_rng.Next(1, 3));
+                                long bStart = Stopwatch.GetTimestamp();
+                                while (Stopwatch.GetTimestamp() - bStart < bounceTicks) { Thread.SpinWait(10); }
                                 Win32.PostLeftUpFresh(foregroundWnd, dcLParam);
                             }
-                                }
-
-                        // Auto-Blockhit Logic for Aim-Assist Mode
-                        if (_cfg.AutoBlockHit && !blockHitSuppressed && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
-                        {
-                            if (_rng.NextDouble() < 0.60)
-                            {
-                                ThreadPool.QueueUserWorkItem(_ =>
-                                {
-                                    Thread.Sleep(_rng.Next(5, 20));
-                                    if (_isCheatbreaker) Win32.SendRightDown();
-                                    else Win32.PostRightDown(foregroundWnd);
-                                    
-                                    Thread.Sleep(_rng.Next(15, 35));
-                                    
-                                    if (_isCheatbreaker) Win32.SendRightUp();
-                                    else Win32.PostRightUpFresh(foregroundWnd, IntPtr.Zero);
-                                });
-                            }
                         }
+
                     }
                 }
 
@@ -621,13 +595,12 @@ namespace Horimiya.Modules
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     
-                    // Sleep(1) para la mayor parte de la espera, SpinWait(1) para precisión final.
-                    // SpinWait(1) en vez de SpinWait(20) para reducir contención de CPU
-                    // con el aim assist - evita que los CPS caigan de 20 a 15.
+                    // Sleep(1) para la mayor parte de la espera, SpinWait activo para los últimos 2ms.
+                    // Esto garantiza un delay microscópicamente perfecto independiente de CPU lag
                     if (leftMs > 2.0)       
                         Thread.Sleep(1);
                     else                    
-                        Thread.Sleep(0);
+                        Thread.SpinWait(10); // Busy wait for the exact microsecond
                 }
 
                 // Update Live Stats
@@ -647,6 +620,9 @@ namespace Horimiya.Modules
                         if (lateAmt > StatWorstLate) StatWorstLate = lateAmt;
                     }
                     StatSamples++;
+                    // Cap StatSamples to a rolling window of 200 to prevent the average from
+                    // becoming completely stale and the division from losing precision over time.
+                    if (StatSamples > 200) StatSamples = 200;
                     StatAvgCps = (StatAvgCps * (StatSamples - 1) + StatLiveCps) / StatSamples;
                 }
                 _lastClickFinishTick = nowTicks;
@@ -751,10 +727,31 @@ namespace Horimiya.Modules
                     if (cpsMax < cpsMin) cpsMax = cpsMin;
                     if (cpsMax > 30.0) cpsMax = 30.0;
                     
-                    double butterflyCps = NextTriangular(cpsMin, cpsMax);
+                    double butterflyCps = NextUniform(cpsMin, cpsMax);
                     delayMs = 2000.0 / butterflyCps;
                     delayMs += (NextGaussian() * 1.5);
                     isButterfly = true;
+                }
+                else if (_cfg.RightRandMode == 3) // Blatant
+                {
+                    double cpsMin = _cfg.RightMinCps;
+                    double cpsMax = _cfg.RightMaxCps;
+                    if (cpsMin < 1.0) cpsMin = 1.0;
+                    if (cpsMax < cpsMin) cpsMax = cpsMin;
+                    if (cpsMax > 30.0) cpsMax = 30.0;
+                    
+                    double rawCps = NextUniform(cpsMin, cpsMax);
+                    delayMs = 1000.0 / rawCps;
+                    
+                    // Ultra consistent timing for blatant mode
+                    delayMs += (_rng.NextDouble() * 0.1 - 0.05);
+                }
+                else if (_cfg.RightRandMode == 4) // Godbridge
+                {
+                    // Perfectly timed for placing blocks quickly and consistently without shifting
+                    // Usually around 19-21 CPS with very specific short hold times
+                    delayMs = 48.0 + (_rng.NextDouble() * 2.0);
+                    isButterfly = false; // keep single exact clicks
                 }
                 else // Jitter
                 {
@@ -765,10 +762,7 @@ namespace Horimiya.Modules
                     if (cpsMax < cpsMin) cpsMax = cpsMin;
                     if (cpsMax > 30.0) cpsMax = 30.0;
                     
-                    double rawCps = NextTriangular(cpsMin, cpsMax);
-                    
-                    // Temporary local EMA since we don't have _stableCps for right click right now
-                    // We can just use the stabilized rawCps directly.
+                    double rawCps = NextUniform(cpsMin, cpsMax);
                     delayMs = 1000.0 / rawCps;
                     delayMs += (_rng.NextDouble() * 0.5 - 0.25);
                 }
@@ -825,7 +819,7 @@ namespace Horimiya.Modules
                     long left = nextClickTick - sw.ElapsedTicks;
                     double leftMs = (double)left / Stopwatch.Frequency * 1000.0;
                     if (leftMs > 2.0) Thread.Sleep(1);
-                    else Thread.Sleep(0);
+                    else Thread.SpinWait(10); // precision spin for last 2ms — avoids Sleep(0) overshoot
                 }
             }
 
@@ -890,14 +884,16 @@ namespace Horimiya.Modules
                 if (_isCheatbreaker) Win32.SendLeftUp();
                 else Win32.PostLeftUp(foregroundWnd, lParam);
 
-            // WTap / STap / ShiftTap (Velocity Simulation)
+            // WTap / STap / ShiftTap / MicroStrafing (Velocity Simulation)
+                // Pre-capture ALL random values — same thread-safety fix as ClickLoop.
                 if (_cfg.WTapEnabled && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0)
                 {
                     if (_rng.NextDouble() < 0.45)
                     {
+                        int wtapSleep = _rng.Next(10, 30);
                         Win32.keybd_event(0x57, 0, Win32.KEYEVENTF_KEYUP, 0);
                         ThreadPool.QueueUserWorkItem(_ => {
-                            Thread.Sleep(_rng.Next(10, 30));
+                            Thread.Sleep(wtapSleep);
                             Win32.keybd_event(0x57, 0, 0, 0);
                         });
                     }
@@ -906,10 +902,11 @@ namespace Horimiya.Modules
                 {
                     if (_rng.NextDouble() < 0.45)
                     {
+                        int stapSleep = _rng.Next(10, 30);
                         ThreadPool.QueueUserWorkItem(_ =>
                         {
                             Win32.keybd_event(0x53, 0, 0, 0);
-                            Thread.Sleep(_rng.Next(10, 30));
+                            Thread.Sleep(stapSleep);
                             Win32.keybd_event(0x53, 0, Win32.KEYEVENTF_KEYUP, 0);
                         });
                     }
@@ -918,10 +915,11 @@ namespace Horimiya.Modules
                 {
                     if (_rng.NextDouble() < 0.45)
                     {
+                        int shiftSleep = _rng.Next(10, 30);
                         ThreadPool.QueueUserWorkItem(_ =>
                         {
                             Win32.keybd_event(0x10, 0, 0, 0);
-                            Thread.Sleep(_rng.Next(10, 30));
+                            Thread.Sleep(shiftSleep);
                             Win32.keybd_event(0x10, 0, Win32.KEYEVENTF_KEYUP, 0);
                         });
                     }
@@ -930,31 +928,13 @@ namespace Horimiya.Modules
                 {
                     if (_rng.NextDouble() < 0.35)
                     {
+                        byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44;
+                        int strafeSleep = _rng.Next(15, 40);
                         ThreadPool.QueueUserWorkItem(_ =>
                         {
-                            byte strafeKey = _rng.NextDouble() > 0.5 ? (byte)0x41 : (byte)0x44; // A or D
                             Win32.keybd_event(strafeKey, 0, 0, 0);
-                            Thread.Sleep(_rng.Next(15, 40));
+                            Thread.Sleep(strafeSleep);
                             Win32.keybd_event(strafeKey, 0, Win32.KEYEVENTF_KEYUP, 0);
-                        });
-                    }
-                }
-                
-                // Auto-Blockhit (After left click up, micro tap right click to block)
-                if (_cfg.AutoBlockHit && !blockHitSuppressed && (Win32.GetAsyncKeyState(0x57) & 0x8000) != 0) // Usually want to block hit when chasing (W down)
-                {
-                    if (_rng.NextDouble() < 0.60) // 60% chance to blockhit per click
-                    {
-                        ThreadPool.QueueUserWorkItem(_ =>
-                        {
-                            Thread.Sleep(_rng.Next(5, 20)); // tiny gap between hit and block
-                            if (_isCheatbreaker) Win32.SendRightDown();
-                            else Win32.PostRightDown(foregroundWnd);
-                            
-                            Thread.Sleep(_rng.Next(15, 35)); // hold block for extremely short time
-                            
-                            if (_isCheatbreaker) Win32.SendRightUp();
-                            else Win32.PostRightUpFresh(foregroundWnd, IntPtr.Zero);
                         });
                     }
                 }
@@ -970,9 +950,10 @@ namespace Horimiya.Modules
         }
 
 
-        // The user explicitly requested to force this directly in the clicker, so it always uses mouse_event
-        // This ensures the aim assists (both internal and external) work flawlessly.
-        private bool _isCheatbreaker => true;
+        // Automatically compatible with External Aim Assists (Slinky, Drip, XClient).
+        // Uses PostMessage by default, which bypasses the Windows mouse queue and keeps the physical
+        // VK_LBUTTON state pressed, allowing aim assists to track smoothly while clicking.
+        private bool _isCheatbreaker => false;
 
         private bool CachedIsMinecraftFocused(IntPtr hwnd)
         {
@@ -1010,17 +991,22 @@ namespace Horimiya.Modules
             string title = _titleBuffer.ToString().ToLower();
 
             // Strict block list: Never click on our own app or common system windows
-            if (title.Contains("lospoderosisimos") || title.Contains("horimiya") || title == "program manager" || title == "")
+            if (title.Contains("horimiya") || title == "program manager" || title == "")
                 return false;
 
             uint processId;
             Win32.GetWindowThreadProcessId(hwnd, out processId);
             string processName = "";
-            try {
-                using (var proc = System.Diagnostics.Process.GetProcessById((int)processId)) {
-                    processName = proc.ProcessName.ToLower();
-                }
-            } catch { }
+            // Use cached process name to avoid expensive Process.GetProcessById every focus check
+            if (!_processNameCache.TryGetValue(processId, out processName))
+            {
+                try {
+                    using (var proc = System.Diagnostics.Process.GetProcessById((int)processId)) {
+                        processName = proc.ProcessName.ToLower();
+                    }
+                } catch { processName = ""; }
+                _processNameCache[processId] = processName;
+            }
 
             // Restrict to known Minecraft processes (javaw, lunar, badlion, feather, etc.)
             if (!processName.Contains("javaw") && !processName.Contains("java") && 
@@ -1086,11 +1072,8 @@ namespace Horimiya.Modules
                 // We check if the current cursor matches any standard Windows cursors.
                 if (ci.flags == 0) return false;
 
-                IntPtr hArrow = Win32.LoadCursor(IntPtr.Zero, 32512); // IDC_ARROW
-                IntPtr hIBeam = Win32.LoadCursor(IntPtr.Zero, 32513); // IDC_IBEAM
-                IntPtr hHand = Win32.LoadCursor(IntPtr.Zero, 32649);  // IDC_HAND
-
-                if (ci.hCursor == hArrow || ci.hCursor == hIBeam || ci.hCursor == hHand)
+                // Use pre-cached cursor handles — LoadCursor is a P/Invoke and these values are constant.
+                if (ci.hCursor == _hCursorArrow || ci.hCursor == _hCursorIBeam || ci.hCursor == _hCursorHand)
                 {
                     return true;
                 }
@@ -1178,7 +1161,8 @@ namespace Horimiya.Modules
             }
             catch
             {
-                return true; // If detection fails, allow clicking
+                // If GDI check completely fails, default to true to allow clicking in game as fallback
+                return true; 
             }
         }
 

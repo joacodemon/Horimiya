@@ -75,6 +75,7 @@ public class ImGuiForm : Form
 
         Text = "Horimiya";
         ClientSize = new Size(560, 420);
+        File.AppendAllText("debug.log", "ImGuiForm Constructor...\n");
         FormBorderStyle = FormBorderStyle.None;  // Borderless — custom title bar in ImGui
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -176,6 +177,7 @@ public class ImGuiForm : Form
 
     private void OnLoad(object sender, EventArgs e)
     {
+        File.AppendAllText("debug.log", "ImGuiForm OnLoad started...\n");
         // Load icon from embedded logo PNG resource for the taskbar
         try
         {
@@ -207,6 +209,7 @@ public class ImGuiForm : Form
         Application.Idle += RenderLoop;
         LoadTaskbarIcon();
         ApplyTheme();
+        File.AppendAllText("debug.log", "ImGuiForm OnLoad finished.\n");
     }
     
     // Builds a proper Windows Icon from a Bitmap using correct ICO binary format
@@ -328,6 +331,7 @@ public class ImGuiForm : Form
 
     private void RenderLoop(object sender, EventArgs e)
     {
+        if (!File.Exists("render_started.txt")) File.WriteAllText("render_started.txt", "1");
         while (IsAppIdle())
         {
             if (_disposed || _glControl == null || _glControl.IsDisposed) return;
@@ -346,7 +350,10 @@ public class ImGuiForm : Form
                 _controller.Render();
                 _glControl.SwapBuffers();
             }
-            catch (Exception) { return; }
+            catch (Exception ex) { 
+                File.AppendAllText("render_crash.log", ex.ToString() + "\n");
+                return; 
+            }
         }
     }
 
@@ -641,7 +648,7 @@ public class ImGuiForm : Form
             ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(1f, 1f, 1f, 0.10f));
             ImGui.PushStyleColor(ImGuiCol.ButtonActive,  new Vector4(1f, 1f, 1f, 0.15f));
             ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.75f, 0.75f, 0.80f, 1f));
-            if (ImGui.Button("–##min", new Vector2(BTN_W, BTN_H))) WindowState = FormWindowState.Minimized;
+            if (ImGui.Button("-##min", new Vector2(BTN_W, BTN_H))) WindowState = FormWindowState.Minimized;
             ImGui.PopStyleColor(4);
             
             // Drag zone: left of the tabs
@@ -881,11 +888,11 @@ public class ImGuiForm : Form
 
         // Click pattern
         ImGui.TextColored(_colTextDim, "Click pattern");
-        string[] randModes = { "Jitter", "Butterfly", "NoDelay" };
+        string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Blatant" };
         int randIdx = _cfg.RandMode;
         if (randIdx >= randModes.Length) randIdx = 0;
         ImGui.SetNextItemWidth(leftW - 30);
-        if (ImGui.Combo("##Pattern", ref randIdx, randModes, randModes.Length)) _cfg.RandMode = randIdx;
+        if (ImGui.Combo("##Pattern", ref randIdx, randModes, randModes.Length)) { _cfg.RandMode = randIdx; _cfg.Save(); }
 
         ImGui.Dummy(new Vector2(0, 5));
 
@@ -893,6 +900,7 @@ public class ImGuiForm : Form
         string bindText = _cfg.ClickBind == 0 ? "Keybind: [None]" : $"Keybind: [{KeyName(_cfg.ClickBind)}]";
         if (_bindMode && _bindingTarget == 0) bindText = "Keybind: [...]";
         if (ImGui.Button(bindText, new Vector2(leftW - 30, 28))) BeginBind(0);
+
 
         ImGui.EndChild();
         ImGui.PopStyleVar();
@@ -1037,7 +1045,7 @@ public class ImGuiForm : Form
         ImGui.Dummy(new Vector2(0, 5));
 
         ImGui.TextColored(_colTextDim, "Click pattern");
-        string[] randModes = { "Jitter", "Butterfly", "NoDelay" };
+        string[] randModes = { "Jitter", "Butterfly", "NoDelay", "Blatant", "Godbridge" };
         int randIdx = _cfg.RightRandMode;
         if (randIdx >= randModes.Length) randIdx = 0;
         ImGui.SetNextItemWidth(leftW - 30);

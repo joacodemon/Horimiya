@@ -25,10 +25,11 @@ namespace Horimiya.Auth
         /// <summary>True if this was the first auth and the HWID was just bound.</summary>
         public bool HwidBound { get; set; }
 
-        /// <summary>True if the license never expires.</summary>
-        public bool IsLifetime => string.Equals(LicenseType, "lifetime", StringComparison.OrdinalIgnoreCase);
+        /// <summary>True si la licencia nunca expira (lifetime o perma).</summary>
+        public bool IsLifetime => string.Equals(LicenseType, "lifetime", StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(LicenseType, "perma",    StringComparison.OrdinalIgnoreCase);
 
-        /// <summary>Returns a formatted expiry label for display in the UI.</summary>
+        /// <summary>Retorna una etiqueta formateada de expiración para mostrar en la UI.</summary>
         public string ExpiryDisplay
         {
             get
@@ -41,20 +42,24 @@ namespace Horimiya.Auth
             }
         }
 
-        /// <summary>Returns a friendly license type label.</summary>
+        /// <summary>Retorna una etiqueta amigable del tipo de licencia.</summary>
         public string LicenseTypeDisplay
         {
             get
             {
                 switch (LicenseType?.ToLowerInvariant())
                 {
-                    case "trial":     return "Trial (3 days)";
-                    case "monthly":   return "Monthly";
-                    case "quarterly": return "Quarterly";
-                    case "biannual":  return "6 Months";
-                    case "yearly":    return "Yearly";
-                    case "lifetime":  return "Lifetime ∞";
-                    default:          return LicenseType ?? "Unknown";
+                    case "lifetime":  return "∞ Lifetime";
+                    case "perma":     return "∞ Permanente";
+                    case "30d":       return "30 Días";
+                    case "14d":       return "14 Días";
+                    case "7d":        return "7 Días";
+                    case "trial":     return "Trial";
+                    case "monthly":   return "Mensual (30d)";
+                    case "quarterly": return "Trimestral (90d)";
+                    case "biannual":  return "6 Meses";
+                    case "yearly":    return "Anual";
+                    default:          return LicenseType ?? "Desconocido";
                 }
             }
         }

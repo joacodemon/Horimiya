@@ -38,8 +38,28 @@ namespace Horimiya.Utils
         [DllImport("user32.dll")]
         public static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct CURSORINFO
+        {
+            public int cbSize;
+            public int flags;
+            public IntPtr hCursor;
+            public POINT ptScreenPos;
+        }
+
         [DllImport("user32.dll")]
         public static extern bool GetCursorInfo(ref CURSORINFO pci);
+
+        public static bool IsCursorShowing()
+        {
+            CURSORINFO info = new CURSORINFO();
+            info.cbSize = Marshal.SizeOf(info);
+            if (GetCursorInfo(ref info))
+            {
+                return info.flags == 0x00000001; // CURSOR_SHOWING
+            }
+            return false;
+        }
 
         [DllImport("user32.dll")]
         public static extern bool GetCursorPos(out Point lpPoint);
@@ -370,15 +390,6 @@ namespace Horimiya.Utils
             public uint time;
             public IntPtr dwExtraInfo;
         }
-        [StructLayout(LayoutKind.Sequential)]
-        public struct CURSORINFO
-        {
-            public int cbSize;
-            public int flags;
-            public IntPtr hCursor;
-            public Point ptScreenPos;
-        }
-
         [StructLayout(LayoutKind.Sequential)]
         public struct RECT
         {

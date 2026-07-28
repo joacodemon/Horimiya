@@ -460,8 +460,8 @@ namespace Horimiya.UI
                 using (Pen p = new Pen(Color.FromArgb(80, _accentColor), 1))
                     e.Graphics.DrawLine(p, 89, 0, 89, sb.Height);
             };
-            sb.Controls.Add(Lbl("los", DIM, 5, 6, FNT));
-            sb.Controls.Add(Lbl("poderosisimos", DIM, 5, 18, FNT));
+            sb.Controls.Add(Lbl("", DIM, 5, 6, FNT));
+            sb.Controls.Add(Lbl("Horimiya", DIM, 5, 18, FNT));
             _bLmb  = SideBtn("LMB",  42); _bLmb.Click  += (s,e) => SetTab(0);
             _bRmb  = SideBtn("RMB",  72); _bRmb.Click  += (s,e) => SetTab(4);
             _bRec  = SideBtn("REC",  102); _bRec.Click  += (s,e) => SetTab(1);
@@ -1509,8 +1509,7 @@ namespace Horimiya.UI
                 var loaded = AppConfig.FromJson(File.ReadAllText(path));
                 _cfg.AverageCps = loaded.AverageCps; _cfg.Mode = loaded.Mode;
                 _cfg.BBMode = loaded.BBMode; _cfg.OnlyInGame = loaded.OnlyInGame; _cfg.RmbLock = loaded.RmbLock;
-                _cfg.WorkInMenus = loaded.WorkInMenus; _cfg.DiscordRpc = loaded.DiscordRpc;
-                _cfg.DiscordAppId = loaded.DiscordAppId;
+                _cfg.WorkInMenus = loaded.WorkInMenus;
                 _cfg.Sound = loaded.Sound;
                 _cfg.ClickBind = loaded.ClickBind; _cfg.HideBind = loaded.HideBind;
                 _cfg.RandMode = loaded.RandMode;
@@ -1538,8 +1537,6 @@ namespace Horimiya.UI
             if (_btnColor != null) ApplyAccentToAll(Color.FromArgb(_cfg.ColorAccent));
             if (_btnBind != null) _btnBind.Text = _cfg.ClickBind == 0 ? "Bind: none" : "Bind: " + KeyName(_cfg.ClickBind);
             if (_btnHide != null) _btnHide.Text = _cfg.HideBind  == 0 ? "Click to Bind" : "Key: " + KeyName(_cfg.HideBind);
-
-            if (_cfg.DiscordRpc) _misc.StartRpc(); else _misc.StopRpc();
         }
 
         void LoadBackgroundImage()

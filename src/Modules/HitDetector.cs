@@ -54,16 +54,15 @@ namespace Horimiya.Modules
 
         // ── Hurt particle thresholds ──
         // Minecraft hit particles: vivid red (R high, G low, B low).
-        // Tightened to reduce false positives from warm-colored blocks/sky.
-        private const byte HURT_R_MIN    = 185; // strong red channel
+        private const byte HURT_R_MIN    = 170; // strong red channel (was 185, loosened to catch distant particles)
         private const byte HURT_G_MAX    = 75;  // barely any green
         private const byte HURT_B_MAX    = 75;  // barely any blue
-        private const int  HURT_PIXEL_MIN = 2;  // need >= 2 red pixels to call it a hit
+        private const int  HURT_PIXEL_MIN = 1;  // 1 red pixel is enough (was 2, single particle counts)
 
         // ── Motion thresholds ──
-        // Higher delta avoids triggering on compression artifacts or camera pan.
-        private const int MOTION_THRESHOLD   = 65; // per-channel sum delta
-        private const int MOTION_MIN_CHANGED = 6;  // at least 6/20 points must change
+        // Lower delta catches subtler knockback / mob flinch animations.
+        private const int MOTION_THRESHOLD   = 45; // per-channel sum delta (was 65, too strict)
+        private const int MOTION_MIN_CHANGED = 4;  // at least 4/20 points must change (was 6, too many)
 
         // ── Debounce ──
         // Prevent counting the same hit event twice (game flashes for multiple frames).

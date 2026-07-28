@@ -254,7 +254,7 @@ namespace Horimiya.UI
             new Thread(() =>
             {
                 string hwid = HwidGenerator.GetHwid();
-                if (!IsDisposed)
+                if (!IsDisposed && IsHandleCreated)
                     Invoke((Action)(() => _lblHwid.Text = hwid));
             }) { IsBackground = true }.Start();
 
@@ -309,7 +309,7 @@ namespace Horimiya.UI
             new Thread(() =>
             {
                 var result = AuthManager.Authenticate(key);
-                if (!IsDisposed)
+                if (!IsDisposed && IsHandleCreated)
                     Invoke((Action)(() => HandleResult(result)));
             }) { IsBackground = true }.Start();
         }

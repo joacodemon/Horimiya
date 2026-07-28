@@ -18,7 +18,8 @@ namespace Horimiya.Config
         {
             if (RandMode == 0) return "jitter";
             if (RandMode == 1) return "butterfly";
-            return "nodelay";
+            if (RandMode == 2) return "nodelay";
+            return "blatant";
         }
     }
 
@@ -37,8 +38,6 @@ namespace Horimiya.Config
         public bool RmbLock = true; // Bloquear LMB cuando RMB está presionado para evitar BlockHit automático
         public bool WorkInMenus = true;
 
-        public bool DiscordRpc = true;
-        public string DiscordAppId = "1234567890123456789";
         public bool DetectCheatBreaker = true;
         public string Sound = "None";
         public int ClickBind = 0;
@@ -61,7 +60,6 @@ namespace Horimiya.Config
         public string LicenseKey = "";
         public float AccentG = 0.25f;
         public float AccentB = 0.85f;
-        public int ClickMethod = 0; // 0=PostMessage (Internal Aim Assist), 1=MouseEvent (External Aim Assist)
         public int NotificationPosition = 0; // 0=Bottom Left, 1=Bottom Right, 2=Top Left, 3=Top Right
         public bool ParticleEnabled = false;
         public bool RefillMode = false;
@@ -80,7 +78,6 @@ namespace Horimiya.Config
         public bool WTapEnabled = false;
         public bool STapEnabled = false;
         public bool ShiftTapEnabled = false;
-        public bool AutoBlockHit = false;
         public bool MicroStrafing = false;
         public double PingMs = 0.0; // Latency compensation (0-200ms)
         public bool HitDetectionEnabled = false; // Pixel-based hit detection
@@ -153,8 +150,7 @@ namespace Horimiya.Config
             sb.AppendLine(string.Format("  \"OnlyInGame\": {0},", OnlyInGame ? "true" : "false"));
             sb.AppendLine(string.Format("  \"RmbLock\": {0},", RmbLock ? "true" : "false"));
             sb.AppendLine(string.Format("  \"WorkInMenus\": {0},", WorkInMenus ? "true" : "false"));
-            sb.AppendLine(string.Format("  \"DiscordRpc\": {0},", DiscordRpc ? "true" : "false"));
-            sb.AppendLine(string.Format("  \"DiscordAppId\": \"{0}\",", DiscordAppId));
+            sb.AppendLine(string.Format("  \"DetectCheatBreaker\": {0},", DetectCheatBreaker ? "true" : "false"));
             sb.AppendLine(string.Format("  \"LicenseKey\": \"{0}\",", LicenseKey));
 
             sb.AppendLine(string.Format("  \"Sound\": \"{0}\",", Sound));
@@ -172,7 +168,6 @@ namespace Horimiya.Config
             sb.AppendLine(string.Format("  \"CloudPresetsUrl\": \"{0}\",", CloudPresetsUrl));
             sb.AppendLine(string.Format("  \"Mqtt\": {{\"Host\": \"{0}\", \"Port\": {1}, \"Username\": \"{2}\", \"Password\": \"{3}\", \"PublishTopic\": \"{4}\", \"SubscribeTopic\": \"{5}\", \"UseTls\": {6}, \"QoS\": {7}}},", Mqtt.Host, Mqtt.Port, Mqtt.Username, Mqtt.Password, Mqtt.PublishTopic, Mqtt.SubscribeTopic, Mqtt.UseTls ? "true" : "false", Mqtt.QoS));
             sb.AppendLine(string.Format("  \"ColorAccent\": {0},", ColorAccent));
-            sb.AppendLine(string.Format("  \"ClickMethod\": {0},", ClickMethod));
             sb.AppendLine(string.Format("  \"AccentR\": {0},", AccentR.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"AccentG\": {0},", AccentG.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"AccentB\": {0},", AccentB.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)));
@@ -194,7 +189,6 @@ namespace Horimiya.Config
             sb.AppendLine(string.Format("  \"WTapEnabled\": {0},", WTapEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"STapEnabled\": {0},", STapEnabled ? "true" : "false"));
             sb.AppendLine(string.Format("  \"ShiftTapEnabled\": {0},", ShiftTapEnabled ? "true" : "false"));
-            sb.AppendLine(string.Format("  \"AutoBlockHit\": {0},", AutoBlockHit ? "true" : "false"));
             sb.AppendLine(string.Format("  \"MicroStrafing\": {0},", MicroStrafing ? "true" : "false"));
             sb.AppendLine(string.Format("  \"PingMs\": {0},", PingMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)));
             sb.AppendLine(string.Format("  \"HitDetectionEnabled\": {0},", HitDetectionEnabled ? "true" : "false"));
@@ -242,8 +236,7 @@ namespace Horimiya.Config
             cfg.OnlyInGame = GetBool(json, "OnlyInGame", cfg.OnlyInGame);
             cfg.RmbLock = GetBool(json, "RmbLock", cfg.RmbLock);
             cfg.WorkInMenus = GetBool(json, "WorkInMenus", cfg.WorkInMenus);
-            cfg.DiscordRpc = GetBool(json, "DiscordRpc", cfg.DiscordRpc);
-            cfg.DiscordAppId = GetString(json, "DiscordAppId", cfg.DiscordAppId);
+            cfg.DetectCheatBreaker = GetBool(json, "DetectCheatBreaker", cfg.DetectCheatBreaker);
             cfg.LicenseKey = GetString(json, "LicenseKey", cfg.LicenseKey);
 
             cfg.Sound = GetString(json, "Sound", cfg.Sound);
@@ -266,7 +259,6 @@ namespace Horimiya.Config
             cfg.Mqtt = GetMqttSettings(json);
 
             cfg.ColorAccent = GetInt(json, "ColorAccent", cfg.ColorAccent);
-            cfg.ClickMethod = GetInt(json, "ClickMethod", cfg.ClickMethod);
             cfg.AccentR = GetFloat(json, "AccentR", cfg.AccentR);
             cfg.AccentG = GetFloat(json, "AccentG", cfg.AccentG);
             cfg.AccentB = GetFloat(json, "AccentB", cfg.AccentB);
@@ -288,7 +280,6 @@ namespace Horimiya.Config
             cfg.WTapEnabled = GetBool(json, "WTapEnabled", cfg.WTapEnabled);
             cfg.STapEnabled = GetBool(json, "STapEnabled", cfg.STapEnabled);
             cfg.ShiftTapEnabled = GetBool(json, "ShiftTapEnabled", cfg.ShiftTapEnabled);
-            cfg.AutoBlockHit = GetBool(json, "AutoBlockHit", cfg.AutoBlockHit);
             cfg.MicroStrafing = GetBool(json, "MicroStrafing", cfg.MicroStrafing);
             cfg.PingMs = Math.Max(0, Math.Min(200, GetDouble(json, "PingMs", cfg.PingMs)));
             cfg.HitDetectionEnabled = GetBool(json, "HitDetectionEnabled", cfg.HitDetectionEnabled);

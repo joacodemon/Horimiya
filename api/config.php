@@ -20,13 +20,33 @@ define('DB_PATH', __DIR__ . '/data/licenses.db');
 define('KEY_PREFIX', 'HMRYA');
 
 // ── License Duration Presets (in days) ───────────────────────────────────────
+//
+//  Tipos disponibles al crear una key (admin panel / API):
+//    perma    → Comprado permanente (sin expiración, cualquier PC)
+//    lifetime → Owner/Dev (sin expiración, sin HWID-lock desde server)
+//    30d      → Comprado 30 días
+//    14d      → Trial 14 días
+//    7d       → Trial 7 días
+//    monthly  → Alias de 30d (legado)
+//    quarterly → 90 días
+//    biannual → 180 días
+//    yearly   → 365 días
+//
 define('LICENSE_DURATIONS', [
-    'trial'     => 7,
+    // ── Compradores ───────────────────────────────────────────────────────────
+    'perma'     => 0,    // Sin expiración — comprado permanente
+    '30d'       => 30,   // 30 días — comprado mensual
+
+    // ── Trials ────────────────────────────────────────────────────────────────
+    '14d'       => 14,   // 14 días de prueba
+    '7d'        => 7,    // 7 días de prueba
+
+    // ── Legado / Extras ───────────────────────────────────────────────────────
     'monthly'   => 30,
-    'quartly' => 90,
+    'quarterly' => 90,
     'biannual'  => 180,
     'yearly'    => 365,
-    'lifetime'  => 0,   // 0 = never expires
+    'lifetime'  => 0,    // 0 = nunca expira
 ]);
 
 // ── CORS (optional — enable if client needs it) ──────────────────────────────

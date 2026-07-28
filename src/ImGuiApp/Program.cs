@@ -11,9 +11,20 @@ using Horimiya.Utils;
 
 internal static class Program
 {
+    // ── Versión actual del ejecutable ─────────────────────────────────────
+    public const string APP_VERSION = "1.0.3";
+    // ─────────────────────────────────────────────────────────────────────
+
     [STAThread]
     static void Main()
     {
+        AppDomain.CurrentDomain.UnhandledException += (s, e) => {
+            File.WriteAllText("crash.log", e.ExceptionObject.ToString());
+        };
+        Application.ThreadException += (s, e) => {
+            File.WriteAllText("crash.log", e.Exception.ToString());
+        };
+
         // Cleanup old updates
         try
         {
@@ -73,6 +84,13 @@ internal static class Program
             }
             // ─────────────────────────────────────────────────────────────────
 
+            // ── Chequeo de actualizaciones (background, no bloquea el UI) ────
+            new System.Threading.Thread(() =>
+            {
+                Updater.CheckForUpdates(APP_VERSION);
+            }) { IsBackground = true }.Start();
+            // ─────────────────────────────────────────────────────────────────
+
             // Setup Dependency Injection Container
             var container = new DependencyContainer();
 
@@ -96,94 +114,92 @@ internal static class Program
             misc.Start();
             Win32.StartMouseHook();
 
-            // Console loading screen
-            AllocConsole();
-            IntPtr consoleHwnd = GetConsoleWindow();
-            
-            Console.Title = "Horimiya Client - Premium Build";
-            Console.CursorVisible = false;
-            Console.Clear();
-            
-            // Sleek minimalist header
-            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.WriteLine("\n");
-            Console.WriteLine(@"   _  _         _       _         ");
-            Console.WriteLine(@"  | || |___ _ _(_)_ __ (_)_  _ __ _ ");
-            Console.WriteLine(@"  | __ / _ \ '_| | '  \| | || / _` |");
-            Console.WriteLine(@"  |_||_\___/_| |_|_|_|_|_|\_, \__,_|");
-            Console.WriteLine(@"                          |__/      ");
-            Console.WriteLine("\n");
-            
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.Write("    [");
-            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.Write("+");
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.Write("] Welcome, ");
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("lospoderosos");
-
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.Write("    [");
-            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.Write("+");
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.Write("] Plan: ");
-            Console.ForegroundColor = ConsoleColor.Gray;
-            Console.WriteLine("Lifetime / Developer\n");
-
-            // Background updates check
-            Updater.CheckForUpdates("1.0.1");
-
-            // Fake boot sequence for premium aesthetic
-            string[] bootSequence = new string[]
+            // Premium Console Boot Sequence
+            try 
             {
-                "Establishing secure connection to server...",
-                "Fetching latest dynamic offsets...",
-                "Resolving kernel hooks...",
-                "Bypassing Ring0 Anticheat...",
-                "Mapping memory regions (Stealth Mode)...",
-                "Cleaning execution traces..."
-            };
-
-            var rand = new Random();
-            foreach (var step in bootSequence)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.Write("    [~] ");
-                Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write(step.PadRight(45));
-                Thread.Sleep(rand.Next(150, 400));
+                AllocConsole();
+                var sw = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+                Console.SetOut(sw);
                 
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("OK");
-                Thread.Sleep(rand.Next(50, 150));
-            }
-            
-            Console.WriteLine();
-            
-            // Loading Bar
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.Write("    Injecting [");
-            int totalBlocks = 35;
-            for (int i = 0; i < totalBlocks; i++)
-            {
+                Console.Title = "Horimiya Client - Premium Build";
+                
                 Console.ForegroundColor = ConsoleColor.DarkMagenta;
-                Console.Write("=");
-                Thread.Sleep(rand.Next(10, 35)); 
-                if (i == 10 || i == 25) Thread.Sleep(200); // Simulate hurdles
+                Console.WriteLine("\n");
+                Console.WriteLine(@"   _  _         _       _         ");
+                Console.WriteLine(@"  | || |___ _ _(_)_ __ (_)_  _ __ _ ");
+                Console.WriteLine(@"  | __ / _ \ '_| | '  \| | || / _` |");
+                Console.WriteLine(@"  |_||_\___/_| |_|_|_|_|_|\_, \__,_|");
+                Console.WriteLine(@"                          |__/      ");
+                Console.WriteLine("\n");
+                
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("    [");
+                Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                Console.Write("+");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("] Welcome, ");
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.WriteLine("Horimiya");
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("    [");
+                Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                Console.Write("+");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("] Plan: ");
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.WriteLine("Lifetime / Developer\n");
+
+                string[] bootSequence = new string[]
+                {
+                    "Validando licencia con el servidor...",
+                    "Sincronizando perfil del usuario...",
+                    "Optimizando procesos de red...",
+                    "Cargando modulos y dependencias internas...",
+                    "Cargando configuracion guardada...",
+                    "Inicializando motor grafico (ImGui)...",
+                    "Preparando la interfaz de Horimiya..."
+                };
+
+                var rand = new Random();
+                foreach (var step in bootSequence)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.Write("    [~] ");
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.Write(step.PadRight(45));
+                    Thread.Sleep(rand.Next(150, 400));
+                    
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("OK");
+                    Thread.Sleep(rand.Next(30, 100));
+                }
+                
+                Console.WriteLine();
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.Write("    Injecting [");
+                int totalBlocks = 35;
+                for (int i = 0; i < totalBlocks; i++)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                    Console.Write("=");
+                    Thread.Sleep(rand.Next(10, 30)); 
+                }
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("] 100%\n");
+                
+                Console.ForegroundColor = ConsoleColor.DarkMagenta;
+                Console.Write("    > ");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("Initialization complete. Launching interface...");
+                
+                Thread.Sleep(800);
+            } 
+            catch { }
+            finally 
+            {
+                FreeConsole();
             }
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("] 100%\n");
-            
-            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.Write("    > ");
-            Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine("Initialization complete. Launching interface...");
-            
-            Thread.Sleep(1000);
-            
-            FreeConsole();
 
             // Run ImGui form via DI
             container.RegisterTransient<ImGuiForm>();
