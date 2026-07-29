@@ -346,19 +346,14 @@ namespace Horimiya.Modules
                     }
                     else if (_cfg.RandMode == 2) // NoDelay (MMC Safe)
                     {
-                        // NoDelay bypasses the EMA entirely — the whole point is to be
-                        // extremely fast and consistent, like a hardware mouse switch.
-                        // Going through the EMA erases any difference from other modes.
-                        double u1 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
-                        double u2 = Math.Max(1e-10, 1.0 - _rng.NextDouble());
-                        double gauss = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
-                        // ±0.8ms of gaussian jitter — tight and fast, barely perceptible
-                        gauss = Math.Max(-0.8, Math.Min(0.8, gauss * 0.5));
-                        interval = (1000.0 / cps) + gauss;
+                        // NoDelay: Zero click delay and minimal randomization.
+                        // ±0.2ms of uniform noise — very tight and fast.
+                        interval = (1000.0 / cps);
+                        interval += (_rng.NextDouble() * 0.4 - 0.2);
                         interval = Math.Max(3.0, interval);
 
-                        // Very short down time — simulates fast physical switch release (~1-2ms)
-                        downMs = 1.5 + _rng.NextDouble() * 1.0;
+                        // "No delay": absolute minimum down time (1.0ms) for an instant click release.
+                        downMs = 1.0;
 
                         m_lastIntervalMs = interval;
                         m_lastDownMs = downMs;
