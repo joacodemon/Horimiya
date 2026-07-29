@@ -391,8 +391,8 @@ namespace Horimiya.Modules
                         interval += (_rng.NextDouble() * 0.2 - 0.1);
                         interval = Math.Max(3.0, interval);
 
-                        // Fixed down time: always 28%, no noise — robotic by design
-                        downMs = interval * 0.28;
+                        // Fixed down time: absolute minimum 1.0ms for zero delay release (like NoDelay)
+                        downMs = 1.0;
 
                         m_lastIntervalMs = interval;
                         m_lastDownMs = downMs;
